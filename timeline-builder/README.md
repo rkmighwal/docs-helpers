@@ -4,14 +4,18 @@ An offline, single-file HTML tool for building project timelines (Gantt-style) a
 
 ## Use it
 
-Build once, then open `dist/index.html` in any modern browser (double-click works, `file://` is fine):
+The built app is committed in this repository as [`dist/index.html`](dist/index.html), a single self-contained file. Download it and open it in any modern browser (double-click works, `file://` is fine). No Node.js, install or network needed; copy the file anywhere.
+
+## Build it yourself
+
+Only needed to change the tool or verify the build (requires Node.js 18+):
 
 ```sh
 npm install
-npm run build      # -> dist/index.html (one self-contained file, ~57 kB)
+npm run build      # -> dist/index.html (one self-contained file, ~95 kB)
 ```
 
-Copy `dist/index.html` anywhere; that one file is the whole app.
+The built file is checked into git; rebuild and commit it after changing the source.
 
 Development: `npm run dev` (hot reload), `npm test` (Vitest), `npm run build` (type-check + bundle).
 
