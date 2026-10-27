@@ -1,4 +1,5 @@
-import { BarStyle, GroupStyle, Item, ItemType, Project, Scale, Theme } from './model';
+import { BarStyle, GroupStyle, Item, ItemType, Look, Project, Scale, Theme } from './model';
+import { lookOf } from './themes';
 import { Axis, UNIT_NAME, axisStart, buildAxis } from './scale';
 import { addDays, dow, periodIndexOf, shortDate, todayStr } from './dates';
 import { ShapeId, shapeSvg } from './shapes';
@@ -104,8 +105,8 @@ const DEFAULT_LABEL: Record<ItemType, string> = {
 };
 const TYPE_ORDER: ItemType[] = ['task', 'group', 'milestone', 'gate', 'holiday', 'note'];
 
-/** Effective look of an item, resolving theme defaults. */
-export function itemLook(it: Item, t: Theme): { color: string; shape: ShapeId; bar: BarStyle } {
+/** Effective look of an item, resolving the defaults of the project's theme and layout. */
+export function itemLook(it: Item, t: Look): { color: string; shape: ShapeId; bar: BarStyle } {
   const c = t.colors;
   const sc = t.design.statusColors;
   const color = it.color || (it.type === 'task' && sc.length === 3 ? (it.progress >= 100 ? sc[0] : it.progress > 0 ? sc[1] : sc[2]) : it.type === 'task' && t.design.doneColor && it.progress >= 100 ? t.design.doneColor : it.type === 'holiday' ? c.holidayBand : c[it.type]);
@@ -113,7 +114,7 @@ export function itemLook(it: Item, t: Theme): { color: string; shape: ShapeId; b
   return { color, shape, bar: it.barStyle || t.design.bar };
 }
 
-function legendEntries(p: Project, t: Theme, dated: boolean, hasHolidays: boolean, weekendShade: boolean): LegendEntry[] {
+function legendEntries(p: Project, t: Look, dated: boolean, hasHolidays: boolean, weekendShade: boolean): LegendEntry[] {
   const c = t.colors;
   const byKey = new Map<string, LegendEntry & { order: number; custom: boolean }>();
   for (const it of p.items) {
@@ -146,7 +147,7 @@ function legendEntries(p: Project, t: Theme, dated: boolean, hasHolidays: boolea
   return out;
 }
 
-function legendSwatch(d: Defs, e: LegendEntry, x: number, cy: number, t: Theme): string {
+function legendSwatch(d: Defs, e: LegendEntry, x: number, cy: number, t: Look): string {
   const c = t.colors, r = Math.min(t.barRadius, 6);
   switch (e.kind) {
     case 'bar': return barSvg(d, x, cy - 6, 24, 12, r, e.color, e.bar || 'solid', 0, t.design.gradientTo);
@@ -163,7 +164,8 @@ function legendSwatch(d: Defs, e: LegendEntry, x: number, cy: number, t: Theme):
 
 const entryW = (e: LegendEntry): number => 24 + 8 + textW(e.label, 12) + 22;
 
-export function renderTimeline(p: Project, t: Theme, o: RenderOpts): Layout {
+export function renderTimeline(p: Project, theme: Theme, o: RenderOpts): Layout {
+  const t = lookOf(p, theme);
   const c = t.colors, des = t.design;
   const dated = p.useDates;
   const defs = new Defs();

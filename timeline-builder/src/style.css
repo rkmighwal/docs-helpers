@@ -148,3 +148,13 @@ body.hide-editor .editor { display: none; }
 .about-meta dt { color: var(--muted); font-weight: 600; } .about-meta dd { margin: 0; }
 .license-body { padding: 16px 18px; overflow: auto; max-height: calc(90vh - 56px); }
 .license-text { white-space: pre-wrap; font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; max-height: 45vh; overflow: auto; }
+
+/* templates gallery */
+.tpl-body { padding: 14px 16px; overflow: auto; max-height: calc(90vh - 56px); }
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.tpl-card { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 10px; display: flex; flex-direction: column; gap: 8px; align-self: start; }
+.tpl-card.active { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+.tpl-thumb { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; aspect-ratio: 16 / 10; }
+.tpl-meta { display: flex; flex-direction: column; gap: 2px; }
+.tpl-meta small { color: var(--muted); }
+.grid2 .row { align-self: end; }

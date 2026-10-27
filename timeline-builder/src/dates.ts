@@ -74,6 +74,25 @@ export function isoWeek(s: string): number {
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+/** Days of the week shown Monday first, the way people think of a working week. */
+export const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+/** The working days of a project, given its weekend days. A project whose every day is a "weekend" counts all days, as the working-day maths does. */
+export const workDaysOf = (weekend: number[]): number[] => (weekend.length >= 7 ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4, 5, 6].filter(d => !weekend.includes(d)));
+
+/** Summary of working days, e.g. "Mon–Fri", "Mon, Tue, Thu" or "every day". */
+export function workDaysLabel(days: number[]): string {
+  const order = WEEK_ORDER.filter(d => days.includes(d));
+  if (order.length === 7) return 'every day';
+  if (!order.length) return 'none';
+  const runs: number[][] = [];
+  for (const d of order) {
+    const last = runs[runs.length - 1];
+    if (last && (last[last.length - 1] + 1) % 7 === d) last.push(d); else runs.push([d]);
+  }
+  return runs.map(r => (r.length >= 3 ? `${DOW[r[0]]}–${DOW[r[r.length - 1]]}` : r.map(d => DOW[d]).join(', '))).join(', ');
+}
+
 export function shortDate(s: string): string {
   const d = parse(s);
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;

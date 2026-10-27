@@ -1,5 +1,6 @@
 import { HolidayList, Project, Theme, normalizeProject, sampleProject } from './model';
 import { validateTheme } from './themes';
+import { legacyMigration } from './templates';
 
 const KEY = 'timeline-builder:v1';
 
@@ -27,7 +28,8 @@ export function loadLibrary(): Library {
     const raw = localStorage.getItem(KEY);
     if (!raw) return freshLibrary();
     const j = JSON.parse(raw);
-    const projects = (j.projects ?? []).map(normalizeProject);
+    const migrate = legacyMigration(Array.isArray(j.customThemes) ? j.customThemes : []);
+    const projects = (j.projects ?? []).map((p: any) => normalizeProject(p, migrate));
     if (!projects.length) return freshLibrary();
     return {
       projects,

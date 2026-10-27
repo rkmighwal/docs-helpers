@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, addWorkingDays, countWorkingDays, diffDays, isoWeek, periodStart, addPeriods } from '../src/dates';
 import { buildAxis } from '../src/scale';
-import { newItem, newProject, normalizeProject, recalcItem, sampleProject } from '../src/model';
+import { newItem, newProject, normalizeProject, normalizeStyle, recalcItem, sampleProject } from '../src/model';
 import { renderTimeline } from '../src/render';
 import { BUILTIN_THEMES } from '../src/themes';
+import { TEMPLATES, applyTemplate } from '../src/templates';
 import { mergeImport, parseImport } from '../src/export';
 
 const ctx = (holidays: string[] = []) => ({ weekend: [0, 6], holidays: new Set(holidays) });
@@ -65,9 +66,11 @@ describe('periods and axis', () => {
 });
 
 describe('render + import', () => {
-  it('renders every theme and scale without NaN', () => {
-    for (const t of BUILTIN_THEMES) for (const scale of ['week', 'month', 'quarter', 'year'] as const) {
+  it('renders every template with its theme, at every scale, without NaN', () => {
+    for (const tpl of TEMPLATES) for (const scale of ['week', 'month', 'quarter', 'year'] as const) {
       const p = sampleProject(); p.scale = scale; p.startDate = periodStart(p.startDate, scale);
+      applyTemplate(p, tpl);
+      const t = BUILTIN_THEMES.find(x => x.id === p.themeId)!;
       p.legend.custom.push({ label: 'Custom <&>', color: '#123456' });
       const r = renderTimeline(p, t, { interactive: true, holidays: [{ date: p.startDate, name: 'X' }] });
       expect(r.svg).not.toContain('NaN');
@@ -168,7 +171,8 @@ describe('designs and icons', () => {
   });
   it('legacy themes without a design block still validate', () => {
     const t = validateTheme({ name: 'old', colors: BUILTIN_THEMES[0].colors });
-    expect(t?.design.bar).toBe('solid');
+    expect(t?.colors.task).toBe(BUILTIN_THEMES[0].colors.task);
+    expect((t as any).design).toBeUndefined();
   });
 });
 
@@ -210,5 +214,101 @@ describe('column grouping (sub-division)', () => {
   });
   it('normalizeProject repairs a bad groupBy', () => {
     expect(normalizeProject({ groupBy: 'decade' }).groupBy).toBe('auto');
+  });
+});
+
+describe('themes and templates are separate', () => {
+  it('every template names an existing theme, and ids are unique', () => {
+    const ids = new Set(TEMPLATES.map(x => x.id));
+    expect(ids.size).toBe(TEMPLATES.length);
+    expect(new Set(BUILTIN_THEMES.map(x => x.id)).size).toBe(BUILTIN_THEMES.length);
+    for (const tpl of TEMPLATES) expect(BUILTIN_THEMES.some(th => th.id === tpl.themeId)).toBe(true);
+  });
+  it('a theme holds only colours and a font', () => {
+    for (const th of BUILTIN_THEMES) expect(Object.keys(th).sort()).toEqual(['builtin', 'colors', 'fontFamily', 'id', 'name']);
+  });
+  it('applying a template sets the layout and the theme, and leaves the items alone', () => {
+    const p = sampleProject(); const items = JSON.stringify(p.items);
+    const tpl = TEMPLATES.find(x => x.id === 'tpl-blue-modern')!;
+    applyTemplate(p, tpl);
+    expect(p.themeId).toBe('tpl-blue-modern');
+    expect(p.templateId).toBe('tpl-blue-modern');
+    expect(p.style.design.title).toBe('banner');
+    expect(p.style.rowHeight).toBe(40);
+    expect(JSON.stringify(p.items)).toBe(items);
+    p.style.design.title = 'plain'; // editing the project's layout does not touch the template
+    expect(tpl.style.design.title).toBe('banner');
+  });
+  it('changing the theme keeps the layout; the same layout renders with different colours', () => {
+    const p = sampleProject(); applyTemplate(p, TEMPLATES.find(x => x.id === 'modern')!);
+    const a = renderTimeline(p, BUILTIN_THEMES.find(x => x.id === 'modern')!, { interactive: false, holidays: [] }).svg;
+    const b = renderTimeline(p, BUILTIN_THEMES.find(x => x.id === 'sunrise')!, { interactive: false, holidays: [] }).svg;
+    expect(a).not.toBe(b);
+    expect(a.replace(/#[0-9a-f]{6}/gi, '#').replace(/font-family="[^"]*"/, '')).toBe(b.replace(/#[0-9a-f]{6}/gi, '#').replace(/font-family="[^"]*"/, ''));
+  });
+  it('normalizeStyle repairs junk', () => {
+    const s = normalizeStyle({ rowHeight: 9999, barHeight: 'x', gridStyle: 'wavy', zebra: false, design: { header: 'neon', milestone: 'nope', statusColors: ['#fff'], title: 'banner' } });
+    expect(s.rowHeight).toBe(60);
+    expect(s.barHeight).toBe(60);
+    expect(s.gridStyle).toBe('solid');
+    expect(s.zebra).toBe(false);
+    expect(s.design.header).toBe('solid');
+    expect(s.design.milestone).toBe('diamond');
+    expect(s.design.statusColors).toEqual([]);
+    expect(s.design.title).toBe('banner');
+    expect(normalizeStyle(null).design.bar).toBe('solid');
+  });
+});
+
+describe('files saved before the split', () => {
+  const sample = () => { const p: any = JSON.parse(JSON.stringify(sampleProject())); delete p.style; delete p.templateId; return p; };
+  it('a project on a built-in design gets that design’s layout as its template', () => {
+    const raw = sample(); raw.themeId = 'tpl-orange-purple';
+    const lib = parseImport(JSON.stringify({ project: raw, holidayLists: [] }));
+    const p = lib.projects[0];
+    expect(p.themeId).toBe('tpl-orange-purple');
+    expect(p.templateId).toBe('tpl-orange-purple');
+    expect(p.style).toEqual(TEMPLATES.find(x => x.id === 'tpl-orange-purple')!.style);
+  });
+  it('a project on a custom design keeps that design’s layout; the theme keeps only its colours', () => {
+    const raw = sample(); raw.themeId = 'custom-1';
+    const oldTheme = { id: 'custom-1', name: 'Mine', colors: BUILTIN_THEMES[0].colors, fontFamily: 'Georgia', rowHeight: 44, barHeight: 80, barRadius: 9, gridStyle: 'none', zebra: false, design: { bar: 'gradient', title: 'center' } };
+    const r = parseImport(JSON.stringify({ project: raw, holidayLists: [], customThemes: [oldTheme] }));
+    expect(r.projects[0].style.rowHeight).toBe(44);
+    expect(r.projects[0].style.design.bar).toBe('gradient');
+    expect(r.projects[0].templateId).toBe('');
+    expect(r.themes[0].name).toBe('Mine');
+    expect(r.themes[0].fontFamily).toBe('Georgia');
+    expect((r.themes[0] as any).rowHeight).toBeUndefined();
+  });
+  it('an unknown design falls back to the default layout', () => {
+    const raw = sample(); raw.themeId = 'gone';
+    expect(parseImport(JSON.stringify({ project: raw })).projects[0].style.rowHeight).toBe(30);
+  });
+  it('new files carry their own layout and round-trip', () => {
+    const p = sampleProject(); applyTemplate(p, TEMPLATES.find(x => x.id === 'tpl-yellow-purple')!);
+    const q = parseImport(JSON.stringify({ project: p })).projects[0];
+    expect(q.style).toEqual(p.style);
+    expect(q.templateId).toBe('tpl-yellow-purple');
+  });
+});
+
+import { workDaysLabel, workDaysOf } from '../src/dates';
+describe('working days (the inverse of the weekend)', () => {
+  it('derives working days from weekend days', () => {
+    expect(workDaysOf([0, 6])).toEqual([1, 2, 3, 4, 5]);
+    expect(workDaysOf([5, 6])).toEqual([0, 1, 2, 3, 4]);
+    expect(workDaysOf([])).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(workDaysOf([0, 1, 2, 3, 4, 5, 6])).toEqual([0, 1, 2, 3, 4, 5, 6]); // all "weekend" = every day counts, as in the maths
+  });
+  it('summarises them', () => {
+    expect(workDaysLabel([1, 2, 3, 4, 5])).toBe('Mon–Fri');
+    expect(workDaysLabel([0, 1, 2, 3, 4])).toBe('Mon–Thu, Sun');
+    expect(workDaysLabel([1, 2, 4])).toBe('Mon, Tue, Thu');
+    expect(workDaysLabel([0, 1, 2, 3, 4, 5, 6])).toBe('every day');
+  });
+  it('a Sun–Thu week gives different working-day results', () => {
+    const ctx = { weekend: [5, 6], holidays: new Set<string>() };
+    expect(addWorkingDays('2026-03-01', 5, ctx)).toBe('2026-03-05'); // Sun..Thu
   });
 });

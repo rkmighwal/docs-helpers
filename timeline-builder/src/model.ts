@@ -1,5 +1,5 @@
 import { CalCtx, addWorkingDays, countWorkingDays, todayStr, addDays, periodStart, remapDate, ANCHOR } from './dates';
-import type { ShapeId } from './shapes';
+import { SHAPES, ShapeId } from './shapes';
 
 export type Scale = 'week' | 'month' | 'quarter' | 'year';
 export type ItemType = 'task' | 'group' | 'milestone' | 'gate' | 'holiday' | 'note';
@@ -54,7 +54,12 @@ export interface Project {
   periods: number;
   weekendDays: number[]; // 0=Sun..6=Sat
   holidayListIds: string[];
+  /** Colour theme (palette + font). */
   themeId: string;
+  /** Template the layout was last taken from ('' = customised from scratch). */
+  templateId: string;
+  /** Layout: row height, bar look, header, title, frame… independent of the colours. */
+  style: TimelineStyle;
   items: Item[];
   legend: LegendCfg;
   showDates: boolean;
@@ -82,6 +87,7 @@ export interface HolidayList {
   holidays: { date: string; name: string }[];
 }
 
+/** A colour theme: the palette and the font. Independent of the layout (see `TimelineStyle`). */
 export interface Theme {
   id: string;
   name: string;
@@ -93,6 +99,10 @@ export interface Theme {
     legendBg: string; border: string;
   };
   fontFamily: string;
+}
+
+/** The layout of a timeline: sizes, bar and header looks, title, frame, rows. Colours come from the theme. */
+export interface TimelineStyle {
   rowHeight: number;
   barHeight: number; // percent of row
   barRadius: number;
@@ -100,6 +110,9 @@ export interface Theme {
   zebra: boolean;
   design: ThemeDesign;
 }
+
+/** What the renderer works with: the project's theme and its layout together. */
+export type Look = Theme & TimelineStyle;
 
 export interface ThemeDesign {
   header: HeaderStyle;
@@ -136,7 +149,7 @@ export interface ThemeDesign {
   headerPalette: string[];
 }
 
-export const FILE_VERSION = 1;
+export const FILE_VERSION = 2;
 
 export interface ProjectBundle {
   app: 'timeline-builder';
@@ -144,6 +157,52 @@ export interface ProjectBundle {
   project: Project;
   holidayLists: HolidayList[];
   customThemes: Theme[];
+}
+
+export const DEFAULT_DESIGN: ThemeDesign = {
+  header: 'solid', bar: 'solid', group: 'bracket', milestone: 'diamond', gate: 'hexagon', note: 'circle',
+  title: 'plain', frame: 'none', rows: 'grid', progress: 'overlay', groupLabel: 'row', cells: false, legend: 'inline',
+  labelHeading: 'ACTIVITY', highlight: '', titleColor: '', subtitleColor: '', doneColor: '', gradientTo: '', statusColors: [], headerPalette: [],
+};
+
+export const DEFAULT_STYLE: TimelineStyle = { rowHeight: 30, barHeight: 60, barRadius: 4, gridStyle: 'solid', zebra: true, design: DEFAULT_DESIGN };
+
+export const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+
+const hex = (v: any): string => (/^#[0-9a-fA-F]{6}$/.test(v) ? v : '');
+const pick = <T extends string>(v: any, allowed: readonly T[], d: T): T => (allowed.includes(v) ? v : d);
+const shapeOr = (v: any, d: ShapeId): ShapeId => (SHAPES.some(s => s.id === v) ? v : d);
+const clampNum = (v: any, d: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number(v) || d));
+
+/**
+ * Repair any parsed JSON into a valid layout. Accepts a layout object or, for files written before themes and
+ * templates were separated, an old combined design (same field names, plus colours that are ignored here).
+ */
+export function normalizeStyle(raw: any): TimelineStyle {
+  const d = DEFAULT_DESIGN, r = raw?.design;
+  return {
+    rowHeight: clampNum(raw?.rowHeight, 30, 20, 60), barHeight: clampNum(raw?.barHeight, 60, 20, 100), barRadius: clampNum(raw?.barRadius, 4, 0, 20),
+    gridStyle: pick(raw?.gridStyle, ['solid', 'dashed', 'none'], 'solid'),
+    zebra: raw?.zebra !== false,
+    design: {
+      header: pick(r?.header, ['solid', 'underline', 'rounded', 'plain'], d.header),
+      bar: pick(r?.bar, ['solid', 'outline', 'gradient', 'striped', 'shadow'], d.bar),
+      group: pick(r?.group, ['bracket', 'bar', 'line', 'heading'], d.group),
+      milestone: shapeOr(r?.milestone, d.milestone), gate: shapeOr(r?.gate, d.gate), note: shapeOr(r?.note, d.note),
+      title: pick(r?.title, ['plain', 'banner', 'center', 'split'], d.title),
+      frame: pick(r?.frame, ['none', 'footer-band', 'thin-bands', 'rules', 'rule'], d.frame),
+      rows: pick(r?.rows, ['grid', 'bands', 'bands-full', 'line', 'itemline', 'pillcols'], d.rows),
+      progress: pick(r?.progress, ['overlay', 'percent', 'status', 'none'], d.progress),
+      groupLabel: pick(r?.groupLabel, ['row', 'side'], d.groupLabel),
+      cells: r?.cells === true,
+      legend: pick(r?.legend, ['inline', 'boxes'], d.legend),
+      labelHeading: typeof r?.labelHeading === 'string' ? r.labelHeading : d.labelHeading,
+      highlight: hex(r?.highlight), titleColor: hex(r?.titleColor), subtitleColor: hex(r?.subtitleColor),
+      doneColor: hex(r?.doneColor), gradientTo: hex(r?.gradientTo),
+      statusColors: Array.isArray(r?.statusColors) && r.statusColors.length === 3 && r.statusColors.every((c: any) => hex(c)) ? r.statusColors : [],
+      headerPalette: (Array.isArray(r?.headerPalette) ? r.headerPalette : []).filter((c: any) => hex(c)),
+    },
+  };
 }
 
 export function uid(): string {
@@ -166,7 +225,7 @@ export function newProject(title = 'New project'): Project {
   const start = periodStart(todayStr(), 'month');
   return {
     id: uid(), title, subtitle: '', scale: 'month', groupBy: 'auto', startDate: start, periods: 12,
-    weekendDays: [0, 6], holidayListIds: [], themeId: 'corporate', items: [],
+    weekendDays: [0, 6], holidayListIds: [], themeId: 'corporate', templateId: 'corporate', style: clone(DEFAULT_STYLE), items: [],
     legend: { show: true, position: 'bottom', custom: [] },
     showDates: false, showToday: true, showWeekends: true, showHolidays: true,
     useDates: true, numbering: 'calendar', firstIndex: 0, footerText: '',
@@ -194,8 +253,14 @@ export function recalcItem(it: Item, ctx: CalCtx): void {
   }
 }
 
-/** Fill defaults / migrate any parsed JSON into a valid Project. */
-export function normalizeProject(raw: any): Project {
+/** Where the layout of an old project (saved before themes and templates were separated) came from. */
+export type StyleMigration = (themeId: string) => { style: any; templateId: string } | null;
+
+/**
+ * Fill defaults / migrate any parsed JSON into a valid Project. A project without its own layout takes it from
+ * the old combined design it used, which `migrate` looks up.
+ */
+export function normalizeProject(raw: any, migrate?: StyleMigration): Project {
   const d = newProject();
   const p: Project = { ...d, ...(raw ?? {}) };
   p.legend = { ...d.legend, ...(raw?.legend ?? {}) };
@@ -210,6 +275,14 @@ export function normalizeProject(raw: any): Project {
     const base = newItem(t, /^\d{4}-\d{2}-\d{2}$/.test(i?.start) ? i.start : p.startDate);
     return { ...base, ...i, type: t, level: Math.min(3, Math.max(0, Number(i?.level) || 0)) } as Item;
   });
+  if (raw?.style && typeof raw.style === 'object') {
+    p.style = normalizeStyle(raw.style);
+    p.templateId = typeof raw.templateId === 'string' ? raw.templateId : '';
+  } else {
+    const m = migrate?.(String(p.themeId ?? ''));
+    p.style = normalizeStyle(m?.style);
+    p.templateId = m?.templateId ?? '';
+  }
   return p;
 }
 

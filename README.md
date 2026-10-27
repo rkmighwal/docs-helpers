@@ -9,6 +9,7 @@ Every tool lives in its own folder, runs fully offline in the browser, and is fr
 | Tool | What it does | Folder |
 | --- | --- | --- |
 | **Timeline Builder** | Build project timelines (Gantt-style) with tasks, phases, milestones, gates and holidays, then export them as SVG or PNG for slides and documents. | [timeline-builder/](timeline-builder/) |
+| **Resource Loading Planner** | Plan how many people of which skill are loaded onto which work stream over time, with automatic totals per week, month, quarter or year. Import tasks from Timeline Builder; export as Excel, PNG or SVG. | [resource-loading-planner/](resource-loading-planner/) |
 
 More tools will be added here over time.
 
@@ -18,11 +19,11 @@ An offline, single-file HTML tool. Highlights:
 
 - Weekly, monthly, quarterly or yearly views, optionally grouped (for example months under quarters).
 - Real calendar dates, or relative timelines with no dates (Week 0, Week 1, …).
-- Set either the end date or the number of working days; the other is calculated, skipping weekends and public holidays.
+- Set either the end date or the number of working days; the other is calculated, skipping the days you mark as non-working and public holidays.
 - Reusable public-holiday lists shared across projects.
 - Drag and drop to reorder rows, and to move or resize bars.
 - Many projects, auto-saved in the browser, with JSON import/export and backup.
-- Selectable and customisable designs, plus per-item colours, icons and bar styles.
+- Colour themes and layout templates kept separate: pick a template for the look, a theme for the colours, and fine-tune either; plus per-item colours, icons and bar styles.
 - An automatic legend, and SVG or PNG export.
 
 ### Use it
@@ -52,6 +53,23 @@ See [timeline-builder/README.md](timeline-builder/README.md) for the full featur
 ### Version and license
 
 The footer of each tool shows its version, publish date and license; click the license name to read the full text. A new release is made by updating `version` and `releaseDate` in the tool's `package.json` and rebuilding.
+
+## Resource Loading Planner
+
+An offline, single-file HTML tool, built the same way as Timeline Builder (Vite + TypeScript). Highlights:
+
+- Define work streams, skills and resources, then load *N people of skill S on work stream W between two dates*.
+- Totals per week, month, quarter or year (optionally grouped), counting only the working days you choose and skipping holidays; compares the load with available capacity and flags over-allocation.
+- Real calendar dates or a relative timeline with no dates.
+- Import tasks, phases and the timeline straight from a Timeline Builder JSON file.
+- Table output with per-line border control, editable themes and 13 templates; export as Excel (`.xlsx`), SVG or PNG.
+- Many projects, auto-saved in the browser, with JSON import/export.
+
+### Use it
+
+No installation needed: download **[resource-loading-planner/dist/index.html](resource-loading-planner/dist/index.html)** and open it in any modern browser. Rebuild with `npm install && npm run build` inside `resource-loading-planner/` (Node.js 18+); `npm test` runs the unit tests.
+
+See [resource-loading-planner/README.md](resource-loading-planner/README.md) for the full feature list, the Timeline Builder import and the Excel layout.
 
 ## Adding a new tool
 

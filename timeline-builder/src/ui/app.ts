@@ -1,12 +1,13 @@
 import { h, pickFile, toast } from './dom';
-import { openHolidayDialog, openLicenseDialog, openThemeDialog } from './dialogs';
+import { openHolidayDialog, openLicenseDialog, openTemplateDialog, openThemeDialog } from './dialogs';
 import { APP, formatReleaseDate } from '../about';
 import { store } from '../store';
-import { BarStyle, ITEM_TYPES, Item, ItemType, Project, Scale, newItem, setUseDates, uid } from '../model';
+import { BarStyle, FILE_VERSION, ITEM_TYPES, Item, ItemType, Project, Scale, ThemeDesign, TimelineStyle, newItem, setUseDates, uid } from '../model';
 import { renderTimeline, Layout, itemLook } from '../render';
-import { DOW, MONTHS, addDays, addPeriods, diffDays, fmt, isoWeek, parse, periodIndexOf, periodStart } from '../dates';
+import { DOW, MONTHS, WEEK_ORDER, workDaysLabel, workDaysOf, addDays, addPeriods, diffDays, fmt, isoWeek, parse, periodIndexOf, periodStart } from '../dates';
 import { GROUP_OPTIONS, UNIT_NAME, axisStart, effectiveGroupBy } from '../scale';
 import { SHAPES, ShapeId, shapeSvg } from '../shapes';
+import { templateById } from '../templates';
 import { download, makeBundle, mergeImport, parseImport, readFileText, saveJsonFile, slug, svgToPng } from '../export';
 
 const DEFAULT_PERIODS: Record<Scale, number> = { week: 12, month: 12, quarter: 8, year: 5 };
@@ -20,6 +21,7 @@ const BAR_STYLES: { id: BarStyle; label: string }[] = [
   { id: 'striped', label: 'Striped' }, { id: 'shadow', label: 'Raised (shadow)' },
 ];
 const GROUP_LABEL: Record<string, string> = { none: 'No grouping', month: 'Months', quarter: 'Quarters', year: 'Years' };
+const WORK_PRESETS: [string, number[]][] = [['Mon–Fri', [1, 2, 3, 4, 5]], ['Mon–Sat', [1, 2, 3, 4, 5, 6]], ['Sun–Thu', [0, 1, 2, 3, 4]], ['Every day', [0, 1, 2, 3, 4, 5, 6]]];
 const isPoint = (t: ItemType) => t === 'milestone' || t === 'gate' || t === 'note';
 
 /* ---- remembered UI state (open sections, collapsed panes) ---- */
@@ -107,7 +109,7 @@ export function mountApp(root: HTMLElement) {
     if (r !== 'cancelled') toast(r === 'saved' ? 'Saved to file' : 'Project JSON downloaded');
   };
   const doBackup = async () => {
-    const r = await saveJsonFile('timeline-builder-backup.json', JSON.stringify({ app: 'timeline-builder', version: 1, ...store.lib }, null, 2));
+    const r = await saveJsonFile('timeline-builder-backup.json', JSON.stringify({ app: 'timeline-builder', version: FILE_VERSION, ...store.lib }, null, 2));
     if (r !== 'cancelled') toast('Backup of all projects saved');
   };
   const currentSvg = () => renderTimeline(P(), store.themeFor(P()), { interactive: false, holidays: store.holidaysFor(P()) });
@@ -128,10 +130,11 @@ export function mountApp(root: HTMLElement) {
       ['New project', () => store.addProject()], ['Duplicate project', () => store.duplicateActive()], null,
       ['Open / import JSON…', doImport], ['Save project as JSON…', doSaveJson], ['Backup all projects…', doBackup], null,
       [`About & ${APP.licenseId} license…`, openLicenseDialog]]),
-    menu('Export image', [
+    menu('Export', [
       ['SVG — vector, best for slides', doSvg], null,
       ['PNG — standard (2×)', () => doPng(2)], ['PNG — high resolution (4×)', () => doPng(4)], ['PNG — small (1×)', () => doPng(1)]], true),
-    h('button', { class: 'btn', onclick: openThemeDialog }, '🎨 Designs'),
+    h('button', { class: 'btn', title: 'Start from a ready-made layout (with its colours)', onclick: openTemplateDialog }, '▦ Templates'),
+    h('button', { class: 'btn', title: 'Colours and font', onclick: openThemeDialog }, '🎨 Themes'),
     h('button', { class: 'btn', onclick: openHolidayDialog }, '🗓 Holiday lists'),
     undoBtn, redoBtn, h('span', { class: 'spacer' }), statusEl);
   store.onStatus(s => {
@@ -187,13 +190,14 @@ export function mountApp(root: HTMLElement) {
     const theme = store.themeFor(p);
     const unit = UNIT_NAME[p.scale];
     const relNumbers = !p.useDates || p.numbering === 'relative';
+    const work = workDaysOf(p.weekendDays);
     return [
       card('project', 'Project', 'title, subtitle, footer', [
         field('Title', text(p.title, (q, v) => (q.title = v), 'title', 'Project title')),
         field('Subtitle / description', text(p.subtitle, (q, v) => (q.subtitle = v), 'subtitle', 'e.g. Programme · Version · Date')),
         field('Footer text', text(p.footerText, (q, v) => (q.footerText = v), 'footer', 'e.g. website or confidentiality note (optional)')),
       ], true),
-      card('view', 'Timeline view', `${p.useDates ? 'dates' : 'no dates'} · ${p.scale}ly`, [
+      card('view', 'Timeline view', `${p.useDates ? 'dates' : 'no dates'} · ${p.scale}ly · ${workDaysLabel(work)}`, [
         field('Timeline type', select(p.useDates ? 'dated' : 'relative', [['dated', 'Calendar dates (real start date)'], ['relative', `Relative — no dates (${unit} 0, ${unit} 1, …)`]],
           v => store.mutate(q => setUseDates(q, v === 'dated'), true)),
         p.useDates ? undefined : 'Items are placed by period number. Switch back any time — items keep their position.'),
@@ -210,21 +214,33 @@ export function mountApp(root: HTMLElement) {
           v => store.mutate(q => { q.firstIndex = Number(v); }, true))),
         !p.useDates && field(`Current ${unit.toLowerCase()} (highlighted by some designs)`, h('input', { type: 'number', value: p.currentPeriod ?? '', placeholder: 'none', onchange: (e: Event) => store.mutate(q => { const v = (e.target as HTMLInputElement).value; q.currentPeriod = v === '' ? undefined : Number(v); }, true) })),
         field(`Number of columns (${p.scale}s)`, h('input', { type: 'number', min: 1, max: 120, value: p.periods, onchange: (e: Event) => store.mutate(q => { q.periods = Math.min(120, Math.max(1, Number((e.target as HTMLInputElement).value) || 1)); }, true) })),
-      ].filter(Boolean) as HTMLElement[], true),
-      card('calendar', 'Working calendar', p.useDates ? `${p.holidayListIds.length ? `${store.holidaysFor(p).length} holiday${store.holidaysFor(p).length === 1 ? '' : 's'} from ${p.holidayListIds.length} list${p.holidayListIds.length > 1 ? 's' : ''}` : store.lib.holidayLists.length ? 'no holiday list selected' : 'weekends & holidays'}` : 'weekends', [
-        field('Weekend days — not counted as working days', h('div', { class: 'row wrap' }, ...DOW.map((n, i) =>
-          checkbox(n, p.weekendDays.includes(i), on => store.mutate(q => { q.weekendDays = on ? [...new Set([...q.weekendDays, i])] : q.weekendDays.filter(x => x !== i); }, true))))),
+        h('div', { class: 'subhead' }, 'Working days'),
+        field('Days of the week that count', h('div', { class: 'row wrap' }, ...WEEK_ORDER.map(i =>
+          checkbox(DOW[i], work.includes(i), on => {
+            if (!on && work.length <= 1) { toast('At least one working day is needed', 'error'); store.refresh(); return; }
+            const next = on ? [...new Set([...work, i])] : work.filter(x => x !== i);
+            store.mutate(q => { q.weekendDays = [0, 1, 2, 3, 4, 5, 6].filter(d => !next.includes(d)); }, true);
+          }))),
+          'Only these days are counted when an end date and the working days are calculated from each other; the others are skipped.'),
+        h('div', { class: 'row wrap' }, h('span', { class: 'fhint' }, 'Quick set:'), ...WORK_PRESETS.map(([l, days]) =>
+          h('button', { class: 'btn tiny' + (JSON.stringify(work) === JSON.stringify(days) ? ' on' : ''), onclick: () => store.mutate(q => { q.weekendDays = [0, 1, 2, 3, 4, 5, 6].filter(d => !days.includes(d)); }, true) }, l))),
         p.useDates
           ? field('Public holiday lists used by this project', h('div', { class: 'row wrap' },
             ...(store.lib.holidayLists.length ? store.lib.holidayLists.map(l => checkbox(`${l.name} (${l.holidays.length})`, p.holidayListIds.includes(l.id),
               on => store.mutate(q => { q.holidayListIds = on ? [...q.holidayListIds, l.id] : q.holidayListIds.filter(x => x !== l.id); }, true))) : [h('small', {}, 'No lists yet. ')]),
-            h('button', { class: 'btn small', onclick: openHolidayDialog }, 'Manage lists…')), 'Tick a list to use it in this project. Lists are shared between projects. Holidays are skipped when counting working days and shown on the chart.')
+            h('button', { class: 'btn small', onclick: openHolidayDialog }, 'Manage lists…')),
+            store.holidaysFor(p).length ? `${store.holidaysFor(p).length} holiday${store.holidaysFor(p).length === 1 ? '' : 's'} excluded from working days and shown on the chart.` : 'Tick a list to use it in this project. Lists are shared between projects. Holidays are skipped when counting working days and shown on the chart.')
           : h('p', { class: 'hint' }, 'Public holidays only apply to timelines with calendar dates.'),
-      ], true),
-      card('look', 'Appearance & legend', theme.name, [
-        field('Design', h('div', { class: 'row' },
+      ].filter(Boolean) as HTMLElement[], true),
+      card('look', 'Theme, template & legend', `${templateById(p.templateId)?.name ?? 'custom layout'} · ${theme.name}`, [
+        field('Template — the layout', h('div', { class: 'row' },
+          h('button', { class: 'btn primary small', onclick: openTemplateDialog }, '▦ Browse templates…'),
+          h('small', {}, templateById(p.templateId) ? `Using “${templateById(p.templateId)!.name}”` : 'Customised')),
+          'Row height, bar and header look, title, frame and markers. Fine-tune in “Layout & style”.'),
+        field('Theme — colours & font', h('div', { class: 'row' },
           select(theme.id, store.allThemes().map(t => [t.id, t.name] as [string, string]), v => store.mutate(q => { q.themeId = v; }, true)),
-          h('button', { class: 'btn small', onclick: openThemeDialog }, 'Customise…'))),
+          h('button', { class: 'btn small', onclick: openThemeDialog }, 'Customise…')),
+          'Changing the theme keeps the layout; changing the template also switches to its theme.'),
         h('div', { class: 'row wrap' },
           checkbox(p.useDates ? 'Show dates beside bars' : `Show ${p.scale} range beside bars`, p.showDates, v => store.mutate(q => { q.showDates = v; }, true)),
           p.useDates && checkbox('Today line', p.showToday, v => store.mutate(q => { q.showToday = v; }, true)),
@@ -242,7 +258,49 @@ export function mountApp(root: HTMLElement) {
           h('button', { class: 'btn small', title: 'Remove', onclick: () => store.mutate(q => { q.legend.custom.splice(i, 1); }, true) }, '✕'))),
         h('div', {}, h('button', { class: 'btn small', onclick: () => store.mutate(q => { q.legend.custom.push({ label: '', color: '#8b5cf6' }); }, true) }, '+ Extra legend entry')),
       ].filter(Boolean) as HTMLElement[]),
+      layoutCard(p),
     ];
+  }
+
+  /* ---------------- layout & style (what a template sets) ---------------- */
+  function layoutCard(p: Project): HTMLElement {
+    const st = p.style, d = st.design;
+    const setStyle = (fn: (s: TimelineStyle) => void) => store.mutate(q => { fn(q.style); }, true);
+    const dsel = (label: string, key: keyof ThemeDesign, options: [string, string][]) =>
+      field(label, select(String(d[key]), options, v => setStyle(s => { (s.design as any)[key] = v; })));
+    const size = (label: string, key: 'rowHeight' | 'barHeight' | 'barRadius', min: number, max: number) =>
+      field(`${label} (${min}–${max})`, h('input', { type: 'number', min, max, value: st[key], onchange: (e: Event) => {
+        const n = Number((e.target as HTMLInputElement).value); setStyle(s => { s[key] = Math.min(max, Math.max(min, Number.isFinite(n) ? n : min)); });
+      } }));
+    const colorOpt = (label: string, key: 'highlight' | 'doneColor' | 'gradientTo', def: string) =>
+      h('label', { class: 'check' },
+        h('input', { type: 'checkbox', checked: !!d[key], onchange: (e: Event) => setStyle(s => { s.design[key] = (e.target as HTMLInputElement).checked ? def : ''; }) }), label,
+        d[key] ? h('input', { type: 'color', value: d[key], oninput: (e: Event) => store.mutate(q => { q.style.design[key] = (e.target as HTMLInputElement).value; }, false, 'dc' + key) }) : null);
+    const markers = SHAPES.map(sh => [sh.id, sh.label] as [string, string]);
+    return card('layout', 'Layout & style', `${templateById(p.templateId)?.name ?? 'custom'} · row ${st.rowHeight}px`, [
+      h('p', { class: 'hint' }, 'What a template sets: sizes, header, bars, phases, markers, title, frame and rows. Colours come from the theme.'),
+      h('div', { class: 'subhead' }, 'Sizes'),
+      h('div', { class: 'grid2' }, size('Row height', 'rowHeight', 20, 60), size('Bar height %', 'barHeight', 20, 100), size('Corner radius', 'barRadius', 0, 20),
+        dsel('Row look', 'rows', [['grid', 'Ruled grid'], ['bands', 'Rounded bands (chart)'], ['bands-full', 'Rounded bands (full width)'], ['line', 'Thin guide line'], ['itemline', 'Coloured guide line'], ['pillcols', 'Rounded column pills']])),
+      h('div', { class: 'grid2' },
+        field('Grid', select(st.gridStyle, [['solid', 'Solid'], ['dashed', 'Dashed'], ['none', 'None']], v => setStyle(s => { s.gridStyle = v as TimelineStyle['gridStyle']; }))),
+        h('div', { class: 'row' }, checkbox('Striped rows', st.zebra, on => setStyle(s => { s.zebra = on; })), checkbox('Fill whole grid cells', d.cells, on => setStyle(s => { s.design.cells = on; })))),
+      h('div', { class: 'subhead' }, 'Bars, phases and markers'),
+      h('div', { class: 'grid2' },
+        dsel('Header style', 'header', [['solid', 'Solid band'], ['underline', 'Underline'], ['rounded', 'Rounded pills'], ['plain', 'Plain text']]),
+        dsel('Bar style', 'bar', [['solid', 'Solid'], ['outline', 'Outline'], ['gradient', 'Gradient'], ['striped', 'Striped'], ['shadow', 'Raised (shadow)']]),
+        dsel('Phase style', 'group', [['bracket', 'Bracket'], ['bar', 'Thick bar'], ['line', 'Line with ends'], ['heading', 'Text heading only']]),
+        dsel('Phases', 'groupLabel', [['row', 'Own row'], ['side', 'Vertical pill beside rows']]),
+        dsel('Milestone marker', 'milestone', markers), dsel('Gate marker', 'gate', markers), dsel('Note marker', 'note', markers),
+        dsel('Progress', 'progress', [['overlay', 'Filled portion'], ['percent', 'Percent text in bar'], ['status', 'Status text in bar'], ['none', 'Not shown']])),
+      h('div', { class: 'row wrap' }, colorOpt('Highlight current period', 'highlight', '#86e3c5'), colorOpt('Colour for 100% tasks', 'doneColor', '#3f97b0'), colorOpt('Gradient end colour', 'gradientTo', '#e79bf5')),
+      h('div', { class: 'subhead' }, 'Title, frame and legend'),
+      h('div', { class: 'grid2' },
+        dsel('Title', 'title', [['plain', 'Plain'], ['banner', 'Banner (title left, subtitle right)'], ['center', 'Centred'], ['split', 'Title + description']]),
+        dsel('Page frame', 'frame', [['none', 'None'], ['footer-band', 'Footer band'], ['thin-bands', 'Thin top & bottom bands'], ['rules', 'Rules above & below'], ['rule', 'Rule under title']]),
+        dsel('Legend style', 'legend', [['inline', 'Inline'], ['boxes', 'Colour boxes (full width)']]),
+        field('Label column heading', h('input', { type: 'text', value: d.labelHeading, placeholder: 'ACTIVITY', onchange: (e: Event) => setStyle(s => { s.design.labelHeading = (e.target as HTMLInputElement).value; }) }))),
+    ]);
   }
 
   /* ---------------- items ---------------- */
@@ -267,7 +325,7 @@ export function mountApp(root: HTMLElement) {
   }
 
   function badge(it: Item): string {
-    const look = itemLook(it, store.themeFor(P()));
+    const look = itemLook(it, store.lookFor(P()));
     let inner: string;
     if (isPoint(it.type) || it.icon) inner = shapeSvg(look.shape, 10, 10, 6.5, look.color, '#555', '#fff');
     else if (it.type === 'task') inner = `<rect x="1" y="6" width="18" height="8" rx="2.5" fill="${look.color}"/>`;
@@ -281,7 +339,7 @@ export function mountApp(root: HTMLElement) {
     const point = isPoint(it.type), band = it.type === 'holiday';
     const upd = (fn: (i: Item) => void, structural = false, key?: string) =>
       store.mutate(q => { const x = q.items.find(i => i.id === it.id); if (x) fn(x); }, structural, key ? `${it.id}:${key}` : undefined);
-    const look = itemLook(it, store.themeFor(p));
+    const look = itemLook(it, store.lookFor(p));
     const isOpen = openRows.has(it.id);
 
     const handle = h('span', { class: 'handle', title: 'Drag to reorder (a phase moves together with the items under it)', draggable: true }, '⠿');
@@ -397,7 +455,7 @@ export function mountApp(root: HTMLElement) {
   function renderEditor() {
     const scroll = editor.scrollTop;
     const p = P();
-    const setAll = (open: boolean) => { ['project', 'view', 'calendar', 'look', 'items'].forEach(k => (ui.open[k] = open)); saveUi(); renderEditor(); };
+    const setAll = (open: boolean) => { ['project', 'view', 'look', 'layout', 'items'].forEach(k => (ui.open[k] = open)); saveUi(); renderEditor(); };
     renderItems();
     editor.replaceChildren(
       h('div', { class: 'editor-head' }, h('strong', {}, 'Editor'), h('span', { class: 'spacer' }),

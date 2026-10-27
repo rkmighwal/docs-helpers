@@ -1,6 +1,7 @@
 import { FILE_VERSION, HolidayList, Project, ProjectBundle, Theme, normalizeProject, uid } from './model';
 import { Library, normalizeHolidayList } from './storage';
 import { validateTheme } from './themes';
+import { legacyMigration } from './templates';
 
 export function download(filename: string, data: Blob | string, type = 'application/octet-stream') {
   const blob = typeof data === 'string' ? new Blob([data], { type }) : data;
@@ -59,11 +60,14 @@ export function parseImport(text: string): ImportResult {
   try { j = JSON.parse(text); } catch { throw new Error('File is not valid JSON.'); }
   const lists = (arr: any) => (Array.isArray(arr) ? arr : []).map(normalizeHolidayList);
   const themes = (arr: any) => (Array.isArray(arr) ? arr : []).map(validateTheme).filter(Boolean) as Theme[];
+  // files written before themes and templates were separated keep the layout inside their custom designs
+  const migrate = legacyMigration(Array.isArray(j?.customThemes) ? j.customThemes : []);
+  const project = (p: any) => normalizeProject(p, migrate);
   if (Array.isArray(j?.projects)) {
-    return { projects: j.projects.map(normalizeProject), holidayLists: lists(j.holidayLists), themes: themes(j.customThemes) };
+    return { projects: j.projects.map(project), holidayLists: lists(j.holidayLists), themes: themes(j.customThemes) };
   }
-  if (j?.project) return { projects: [normalizeProject(j.project)], holidayLists: lists(j.holidayLists), themes: themes(j.customThemes) };
-  if (Array.isArray(j?.items)) return { projects: [normalizeProject(j)], holidayLists: [], themes: [] };
+  if (j?.project) return { projects: [project(j.project)], holidayLists: lists(j.holidayLists), themes: themes(j.customThemes) };
+  if (Array.isArray(j?.items)) return { projects: [project(j)], holidayLists: [], themes: [] };
   throw new Error('This file does not look like a timeline project.');
 }
 

@@ -1,7 +1,7 @@
 import { CalCtx } from './dates';
-import { HolidayList, Project, Theme, newProject, recalcItem, uid } from './model';
+import { HolidayList, Look, Project, Theme, newProject, recalcItem, uid } from './model';
 import { Library, loadLibrary, saveLibrary } from './storage';
-import { BUILTIN_THEMES } from './themes';
+import { BUILTIN_THEMES, lookOf } from './themes';
 import type { Holiday } from './render';
 
 export type SaveStatus = 'saved' | 'saving' | 'error';
@@ -38,6 +38,8 @@ class Store {
   }
   allThemes(): Theme[] { return [...BUILTIN_THEMES, ...this.lib.customThemes]; }
   themeFor(p: Project): Theme { return this.allThemes().find(t => t.id === p.themeId) ?? BUILTIN_THEMES[0]; }
+  /** The project's theme and layout together. */
+  lookFor(p: Project): Look { return lookOf(p, this.themeFor(p)); }
 
   recalcAll(p: Project) {
     const ctx = this.ctxFor(p);
@@ -68,6 +70,9 @@ class Store {
     p.updatedAt = Date.now();
     this.emit(structural);
   }
+
+  /** Re-render the editor without changing the project, e.g. to put back a control the user changed to an invalid value. */
+  refresh() { this.emit(true); }
 
   canUndo() { return (this.undoStack[this.lib.activeId]?.length ?? 0) > 0; }
   canRedo() { return (this.redoStack[this.lib.activeId]?.length ?? 0) > 0; }
