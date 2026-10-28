@@ -32,11 +32,13 @@ An offline, single-file HTML tool. Highlights:
 
 ### Use it
 
-No installation or Node.js needed. The ready-to-use app is a single file that is committed to this repository:
+No installation or Node.js needed.
 
-**[timeline-builder/dist/index.html](timeline-builder/dist/index.html)**
+1. Go to the **[Releases page](https://github.com/rkmighwal/docs-helpers/releases)** and open the latest release named **`timeline-builder-v…`**.
+2. Under *Assets*, download the file `timeline-builder-v….html`.
+3. Open it in any modern browser; double-clicking works.
 
-Download that file (on GitHub, open it and use the *Download raw file* button, or clone the repo), then open it in any modern browser; double-clicking works. You can copy it anywhere, email it, or put it on a USB stick. It makes no network requests, and your projects stay in your browser's local storage on that device.
+It is a single self-contained file: copy it anywhere, email it, or put it on a USB stick. It makes no network requests, and your projects stay in your browser's local storage on that device. Downloading from a release is what the download counter above measures.
 
 ### Develop or rebuild it
 
@@ -52,7 +54,7 @@ npm run build      # type-check and produce dist/index.html
 
 The built `dist/index.html` is committed, so remember to rebuild and commit it after changing the tool's source.
 
-See [timeline-builder/README.md](timeline-builder/README.md) for the full feature list, how to publish your own designs, and the source layout.
+See [timeline-builder/README.md](timeline-builder/README.md) for the full feature list, how to add your own themes and templates, and the source layout.
 
 ### Version and license
 
@@ -71,9 +73,29 @@ An offline, single-file HTML tool, built the same way as Timeline Builder (Vite 
 
 ### Use it
 
-No installation needed: download **[resource-loading-planner/dist/index.html](resource-loading-planner/dist/index.html)** and open it in any modern browser. Rebuild with `npm install && npm run build` inside `resource-loading-planner/` (Node.js 18+); `npm test` runs the unit tests.
+No installation or Node.js needed.
 
-See [resource-loading-planner/README.md](resource-loading-planner/README.md) for the full feature list, the Timeline Builder import and the Excel layout.
+1. Go to the **[Releases page](https://github.com/rkmighwal/docs-helpers/releases)** and open the latest release named **`resource-loading-planner-v…`**.
+2. Under *Assets*, download the file `resource-loading-planner-v….html`.
+3. Open it in any modern browser; double-clicking works.
+
+It makes no network requests, and your projects stay in your browser's local storage on that device. Use *File ▸ Save project as JSON* to keep a copy you can import later, and *File ▸ Import tasks & timeline from Timeline Builder* to bring in a Timeline Builder project. Downloading from a release is what the download counter above measures.
+
+### Develop or rebuild it
+
+Only needed if you want to change the tool. This requires [Node.js](https://nodejs.org) 18 or newer.
+
+```sh
+cd resource-loading-planner
+npm install        # once
+npm run dev        # local dev server with hot reload
+npm test           # unit tests (Vitest)
+npm run build      # type-check and produce dist/index.html
+```
+
+The built `dist/index.html` is committed, so remember to rebuild and commit it after changing the tool's source.
+
+See [resource-loading-planner/README.md](resource-loading-planner/README.md) for the full feature list, the Timeline Builder import, the cost calculations and the Excel layout.
 
 ## Publishing a release
 
