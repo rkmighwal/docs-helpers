@@ -1,0 +1,56 @@
+# Publishes a tool as a GitHub Release, so its downloads can be counted.
+#
+#   git tag timeline-builder-v1.1.0 && git push origin timeline-builder-v1.1.0
+#
+# The tag is <folder>-v<version>; the version must match that tool's package.json.
+# The release carries one file, <folder>-v<version>.html: the single-file app people download and open.
+name: Release
+
+on:
+  push:
+    tags: ['*-v[0-9]*.[0-9]*.[0-9]*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the tag
+        id: tag
+        run: |
+          TOOL="${GITHUB_REF_NAME%-v*}"
+          VERSION="${GITHUB_REF_NAME##*-v}"
+          [ -f "$TOOL/package.json" ] || { echo "::error::No tool folder '$TOOL' (from tag $GITHUB_REF_NAME)"; exit 1; }
+          PKG="$(node -p "require('./$TOOL/package.json').version")"
+          [ "$PKG" = "$VERSION" ] || { echo "::error::Tag says $VERSION but $TOOL/package.json says $PKG. Update package.json and re-tag."; exit 1; }
+          echo "tool=$TOOL" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ${{ steps.tag.outputs.tool }}/package-lock.json
+
+      - name: Test and build
+        working-directory: ${{ steps.tag.outputs.tool }}
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOOL: ${{ steps.tag.outputs.tool }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          ASSET="$TOOL-v$VERSION.html"
+          cp "$TOOL/dist/index.html" "$ASSET"
+          gh release create "$GITHUB_REF_NAME" "$ASSET" \
+            --title "$TOOL v$VERSION" \
+            --notes "Single-file, offline build of **$TOOL** v$VERSION. Download \`$ASSET\` and open it in any modern browser; nothing is installed and nothing is sent anywhere."

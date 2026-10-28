@@ -1,8 +1,12 @@
 # Timeline Builder
 
+[![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frkmighwal%2Fdocs-helpers%2Fbadges%2Ftimeline-builder.json)](https://github.com/rkmighwal/docs-helpers/releases)
+
 An offline, single-file HTML tool for building project timelines (Gantt-style) and exporting them as SVG or PNG for slides and documents. No server, no network, no account.
 
 ## Use it
+
+Get the latest build from the [Releases page](https://github.com/rkmighwal/docs-helpers/releases) (the file named `timeline-builder-v<version>.html`), or take [`dist/index.html`](dist/index.html) from the repository: they are the same single file. Download counts cover release downloads only.
 
 The built app is committed in this repository as [`dist/index.html`](dist/index.html), a single self-contained file. Download it and open it in any modern browser (double-click works, `file://` is fine). No Node.js, install or network needed; copy the file anywhere.
 

@@ -6,12 +6,16 @@ Every tool lives in its own folder, runs fully offline in the browser, and is fr
 
 ## Available tools
 
-| Tool | What it does | Folder |
-| --- | --- | --- |
-| **Timeline Builder** | Build project timelines (Gantt-style) with tasks, phases, milestones, gates and holidays, then export them as SVG or PNG for slides and documents. | [timeline-builder/](timeline-builder/) |
-| **Resource Loading Planner** | Plan how many people of which skill are loaded onto which work stream over time, with automatic totals per week, month, quarter or year. Import tasks from Timeline Builder; export as Excel, PNG or SVG. | [resource-loading-planner/](resource-loading-planner/) |
+| Tool | What it does | Folder | Downloads |
+| --- | --- | --- | --- |
+| **Timeline Builder** | Build project timelines (Gantt-style) with tasks, phases, milestones, gates and holidays, then export them as SVG or PNG for slides and documents. | [timeline-builder/](timeline-builder/) | [![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frkmighwal%2Fdocs-helpers%2Fbadges%2Ftimeline-builder.json)](https://github.com/rkmighwal/docs-helpers/releases) |
+| **Resource Loading Planner** | Plan how many people of which skill are loaded onto which work stream over time, with automatic totals per week, month, quarter or year. Import tasks from Timeline Builder; export as Excel, PNG or SVG. | [resource-loading-planner/](resource-loading-planner/) | [![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frkmighwal%2Fdocs-helpers%2Fbadges%2Fresource-loading-planner.json)](https://github.com/rkmighwal/docs-helpers/releases) |
 
 More tools will be added here over time.
+
+### Downloads
+
+The download badges count how many times each tool's **release file** was downloaded from the [Releases page](https://github.com/rkmighwal/docs-helpers/releases); they refresh daily and after each release. Copying `dist/index.html` straight from the repository, or cloning it, is not counted (GitHub does not report those), so the number is a floor, not a total. The tools themselves never count or send anything: they make no network requests.
 
 ## Timeline Builder
 
@@ -71,12 +75,29 @@ No installation needed: download **[resource-loading-planner/dist/index.html](re
 
 See [resource-loading-planner/README.md](resource-loading-planner/README.md) for the full feature list, the Timeline Builder import and the Excel layout.
 
+## Publishing a release
+
+A release is what makes a download countable. For a tool in folder `<tool>`:
+
+1. Set `version` (and `releaseDate`) in `<tool>/package.json`, rebuild, and commit as usual.
+2. Tag it and push the tag:
+
+   ```sh
+   git tag <tool>-v<version>          # e.g. timeline-builder-v1.1.0
+   git push origin <tool>-v<version>
+   ```
+
+The **Release** workflow ([.github/workflows/release.yml](.github/workflows/release.yml)) checks that the tag matches `package.json`, runs the tests, builds, and publishes a GitHub Release carrying `<tool>-v<version>.html`. The **Download counts** workflow ([.github/workflows/download-counts.yml](.github/workflows/download-counts.yml)) then sums the downloads of every release of each tool into a badge file on the `badges` branch, which the badges above read. To try the counter by hand: `node .github/scripts/download-counts.mjs /tmp/badges` (and `node --test .github/scripts/download-counts.test.mjs` for its tests).
+
+The first time, the badges show nothing useful until the *Download counts* workflow has run once (Actions tab ▸ *Download counts* ▸ *Run workflow*).
+
 ## Adding a new tool
 
 1. Create a new folder at the repository root, named after the tool.
 2. Keep it self-contained, with its own `README.md`, build and tests, and make it work offline.
    Commit the built, ready-to-use output (for example `dist/`) so users don't need a build setup.
-3. Add a row to the **Available tools** table above.
+3. Add a row to the **Available tools** table above, with its download badge (copy one and change the file name `<tool>.json`).
+4. Publish it as a release (see above). Any folder with a `package.json` gets a badge file automatically.
 
 ## License
 
