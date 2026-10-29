@@ -29,8 +29,9 @@ export const UNIT_NAME: Record<Project['scale'], string> = { week: 'Week', month
 /** Period-aligned origin of the axis (a fixed anchor when the timeline has no calendar dates). */
 export const axisStart = (p: Project): string => periodStart(p.useDates ? p.startDate : ANCHOR, p.scale);
 
-export function buildAxis(p: Project): Axis {
-  const colW = COL_W[p.scale];
+/** `colScale` stretches or squeezes the time columns (the export uses it to make the chart fit a slide); 1 is the normal width. */
+export function buildAxis(p: Project, colScale = 1): Axis {
+  const colW = COL_W[p.scale] * colScale;
   const first = axisStart(p);
   const relative = !p.useDates || p.numbering === 'relative';
   const num0 = Number.isFinite(p.firstIndex) ? p.firstIndex : 0;

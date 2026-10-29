@@ -1,4 +1,7 @@
 import { h, pickFile, toast } from './dom';
+import { markTourDone, startTour, tourPending } from './tour';
+import { timelineTour } from '../tourSteps';
+import { exportPptx } from '../pptx';
 import { openHolidayDialog, openLicenseDialog, openTemplateDialog, openThemeDialog } from './dialogs';
 import { APP, formatReleaseDate } from '../about';
 import { store } from '../store';
@@ -27,15 +30,27 @@ const isPoint = (t: ItemType) => t === 'milestone' || t === 'gate' || t === 'not
 /* ---- remembered UI state (open sections, collapsed panes) ---- */
 interface UiState { open: Record<string, boolean>; sidebar: boolean; editor: boolean }
 const UI_KEY = 'timeline-builder:ui';
+const UI_DEFAULT: UiState = { open: { project: true, timeline: true, items: true }, sidebar: true, editor: true };
 const ui: UiState = (() => {
-  try { return { open: {}, sidebar: true, editor: true, ...JSON.parse(localStorage.getItem(UI_KEY) || '{}') }; } catch { return { open: {}, sidebar: true, editor: true }; }
+  try {
+    const j = JSON.parse(localStorage.getItem(UI_KEY) || '{}');
+    const open: Record<string, boolean> = { ...UI_DEFAULT.open, ...(j.open ?? {}) };
+    // the "Timeline view" section is now called "Timeline", as in the Resource Loading Planner: keep what was open
+    if ('view' in open) { if (j.open?.view !== undefined) open.timeline = j.open.view; delete open.view; }
+    return { ...UI_DEFAULT, ...j, open };
+  } catch { return { ...UI_DEFAULT, open: { ...UI_DEFAULT.open } }; }
 })();
-const saveUi = () => { try { localStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch { /* ignore */ } };
+const TOUR_KEY = 'timeline-builder:tour';
+/** While the guided tour opens and folds sections, what the user has open is left alone. */
+let touring = false;
+const saveUi = () => { if (touring) return; try { localStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch { /* ignore */ } };
+const ALL_CARDS = ['project', 'timeline', 'items', 'look', 'layout'];
 
 export function mountApp(root: HTMLElement) {
   let layout: Layout | null = null;
   let zoom = 1;
   let dragId: string | null = null;
+  let fittedFor = '';
   const openRows = new Set<string>();
   const P = () => store.active();
 
@@ -62,7 +77,7 @@ export function mountApp(root: HTMLElement) {
       h('button', { class: 'btn small', onclick: () => setZoom(1) }, '100%'),
       zoomRange, zoomLabel),
     preview,
-    h('div', { class: 'preview-foot' }, 'Drag a bar to move it · drag its left/right edge to resize · hover for details'));
+    h('div', { class: 'preview-foot' }, 'Drag a bar to move it · drag its left/right edge to resize · click a bar or row label to jump to its item · hover for details'));
   const foot = h('footer', { class: 'appfoot' },
     h('span', {}, `${APP.name} v${APP.version}`),
     h('span', { class: 'dot' }, '·'), h('span', {}, `Published ${formatReleaseDate(APP.releaseDate)}`),
@@ -78,9 +93,9 @@ export function mountApp(root: HTMLElement) {
   const checkbox = (label: string, checked: boolean, on: (v: boolean) => void, title?: string) =>
     h('label', { class: 'check', title }, h('input', { type: 'checkbox', checked, onchange: (e: Event) => on((e.target as HTMLInputElement).checked) }), label);
 
-  function card(id: string, title: string, hint: string, body: (HTMLElement | false)[], defaultOpen = false) {
-    const d = h('details', { class: 'card', open: ui.open[id] ?? defaultOpen },
-      h('summary', {}, h('span', { class: 'card-title' }, title), h('span', { class: 'card-hint' }, hint)),
+  function card(id: string, title: string, hint: string, body: (HTMLElement | false | undefined)[], step?: number) {
+    const d = h('details', { class: 'card', 'data-card': id, open: ui.open[id] ?? false },
+      h('summary', {}, step ? h('span', { class: 'step' }, String(step)) : null, h('span', { class: 'card-title' }, title), h('span', { class: 'card-hint' }, hint)),
       h('div', { class: 'card-body' }, ...body));
     d.addEventListener('toggle', () => { ui.open[id] = d.open; saveUi(); });
     return d;
@@ -113,6 +128,15 @@ export function mountApp(root: HTMLElement) {
     if (r !== 'cancelled') toast('Backup of all projects saved');
   };
   const currentSvg = () => renderTimeline(P(), store.themeFor(P()), { interactive: false, holidays: store.holidaysFor(P()) });
+  const PPTX_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+  /** An editable PowerPoint slide (standard 16:9, chart sized to it): every bar, marker, line and label is a real shape or text box. */
+  const doPptx = () => {
+    try {
+      const p = P();
+      download(`${slug(p.title)}.pptx`, exportPptx(p, store.themeFor(p), store.holidaysFor(p), { title: p.title }), PPTX_TYPE);
+      toast('PowerPoint file downloaded: every bar and label is an editable shape');
+    } catch (e: any) { toast('PowerPoint export failed: ' + e.message, 'error'); }
+  };
   const doSvg = () => { download(`${slug(P().title)}.svg`, currentSvg().svg, 'image/svg+xml'); };
   const doPng = async (scale: number) => {
     try { const r = currentSvg(); download(`${slug(P().title)}.png`, await svgToPng(r.svg, r.width, r.height, scale), 'image/png'); }
@@ -131,11 +155,13 @@ export function mountApp(root: HTMLElement) {
       ['Open / import JSON…', doImport], ['Save project as JSON…', doSaveJson], ['Backup all projects…', doBackup], null,
       [`About & ${APP.licenseId} license…`, openLicenseDialog]]),
     menu('Export', [
-      ['SVG — vector, best for slides', doSvg], null,
+      ['PowerPoint (.pptx) — editable shapes & text', doPptx], null,
+      ['SVG — vector, sharp at any size', doSvg], null,
       ['PNG — standard (2×)', () => doPng(2)], ['PNG — high resolution (4×)', () => doPng(4)], ['PNG — small (1×)', () => doPng(1)]], true),
-    h('button', { class: 'btn', title: 'Start from a ready-made layout (with its colours)', onclick: openTemplateDialog }, '▦ Templates'),
-    h('button', { class: 'btn', title: 'Colours and font', onclick: openThemeDialog }, '🎨 Themes'),
-    h('button', { class: 'btn', onclick: openHolidayDialog }, '🗓 Holiday lists'),
+    h('button', { class: 'btn', title: 'Start from a ready-made layout (with its colours)', onclick: openTemplateDialog, 'data-tour': 'templates' }, '▦ Templates'),
+    h('button', { class: 'btn', title: 'Colours and font', onclick: openThemeDialog, 'data-tour': 'themes' }, '🎨 Themes'),
+    h('button', { class: 'btn', onclick: openHolidayDialog, 'data-tour': 'holidays' }, '🗓 Holiday lists'),
+    h('button', { class: 'btn', title: 'A one-minute guided tour of the tool', onclick: () => runTour(), 'data-tour': 'tour' }, '❓ Quick tour'),
     undoBtn, redoBtn, h('span', { class: 'spacer' }), statusEl);
   store.onStatus(s => {
     statusEl.textContent = s === 'saved' ? '✓ Auto-saved in browser' : s === 'saving' ? 'Saving…' : '⚠ Browser storage unavailable — use File ▸ Save project';
@@ -196,8 +222,9 @@ export function mountApp(root: HTMLElement) {
         field('Title', text(p.title, (q, v) => (q.title = v), 'title', 'Project title')),
         field('Subtitle / description', text(p.subtitle, (q, v) => (q.subtitle = v), 'subtitle', 'e.g. Programme · Version · Date')),
         field('Footer text', text(p.footerText, (q, v) => (q.footerText = v), 'footer', 'e.g. website or confidentiality note (optional)')),
-      ], true),
-      card('view', 'Timeline view', `${p.useDates ? 'dates' : 'no dates'} · ${p.scale}ly · ${workDaysLabel(work)}`, [
+      ], 1),
+      card('timeline', 'Timeline', `${p.useDates ? 'dates' : 'no dates'} · ${p.scale}ly · ${workDaysLabel(work)}`, [
+        h('p', { class: 'hint' }, 'Choose what one column is and where the timeline starts, then which days count as working days. An end date and the working days are calculated from each other, skipping the days that do not count.'),
         field('Timeline type', select(p.useDates ? 'dated' : 'relative', [['dated', 'Calendar dates (real start date)'], ['relative', `Relative — no dates (${unit} 0, ${unit} 1, …)`]],
           v => store.mutate(q => setUseDates(q, v === 'dated'), true)),
         p.useDates ? undefined : 'Items are placed by period number. Switch back any time — items keep their position.'),
@@ -231,7 +258,7 @@ export function mountApp(root: HTMLElement) {
             h('button', { class: 'btn small', onclick: openHolidayDialog }, 'Manage lists…')),
             store.holidaysFor(p).length ? `${store.holidaysFor(p).length} holiday${store.holidaysFor(p).length === 1 ? '' : 's'} excluded from working days and shown on the chart.` : 'Tick a list to use it in this project. Lists are shared between projects. Holidays are skipped when counting working days and shown on the chart.')
           : h('p', { class: 'hint' }, 'Public holidays only apply to timelines with calendar dates.'),
-      ].filter(Boolean) as HTMLElement[], true),
+      ].filter(Boolean) as HTMLElement[], 2),
       card('look', 'Theme, template & legend', `${templateById(p.templateId)?.name ?? 'custom layout'} · ${theme.name}`, [
         field('Template — the layout', h('div', { class: 'row' },
           h('button', { class: 'btn primary small', onclick: openTemplateDialog }, '▦ Browse templates…'),
@@ -422,8 +449,10 @@ export function mountApp(root: HTMLElement) {
     const p = P(), unit = UNIT_NAME[p.scale];
     const hd = (label: string, title: string) => h('span', { title }, label);
     itemsHolder.replaceChildren(
+      h('p', { class: 'hint' }, 'Add tasks, phases, milestones and more, then set their dates. Click a bar or a row label in the preview to jump to its item here.'),
       h('div', { class: 'add-bar' }, h('span', { class: 'flabel' }, 'Add:'),
-        ...ITEM_TYPES.map(t => h('button', { class: 'btn small', title: TYPE_HELP[t.type], onclick: () => addItem(t.type) }, `+ ${TYPE_LABEL[t.type]}`))),
+        ...ITEM_TYPES.map(t => h('button', { class: 'btn small', title: TYPE_HELP[t.type], onclick: () => addItem(t.type) }, `+ ${TYPE_LABEL[t.type]}`)),
+        p.items.length ? h('button', { class: 'btn small', title: 'Open or close the colour / icon / progress details of every item', onclick: () => { const all = p.items.every(i => openRows.has(i.id)); p.items.forEach(i => (all ? openRows.delete(i.id) : openRows.add(i.id))); renderItems(); } }, 'Toggle all details') : undefined),
       h('div', { class: 'irow ihead' }, h('span'), h('span'),
         hd('Activity', 'Name shown on the timeline'),
         hd(p.useDates ? 'Start date' : `Start ${unit.toLowerCase()} #`, p.useDates ? 'First day of the item' : `Number of the ${unit.toLowerCase()} the item starts in`),
@@ -452,16 +481,39 @@ export function mountApp(root: HTMLElement) {
   }
 
   /* ---------------- editor pane ---------------- */
+  /** Quick links to the main sections; a tick shows what already has content. */
+  function steps(p: Project) {
+    const items: [string, string, boolean][] = [['timeline', 'Timeline', true], ['items', 'Items', p.items.length > 0], ['look', 'Look', !!p.templateId]];
+    return h('div', { class: 'steps' }, ...items.map(([id, label, done], i) => h('button', {
+      class: 'stepchip' + (done ? ' done' : ''), title: `Go to “${label}”`,
+      onclick: () => { ui.open[id] = true; saveUi(); renderEditor(); (editor.querySelector(`[data-card="${id}"]`) as HTMLElement | null)?.scrollIntoView({ block: 'start', behavior: 'smooth' }); },
+    }, `${done ? '✓' : i + 1} ${label}`)));
+  }
+
+  /** Jump from the preview to an item's row in the editor. */
+  function focusItem(id: string) {
+    if (!ui.editor) { ui.editor = true; saveUi(); applyLayoutClasses(); }
+    if (!ui.open.items) { ui.open.items = true; saveUi(); renderEditor(); }
+    const el = (editor.querySelector(`.irow[data-id="${id}"]`) as HTMLElement | null)?.closest('.iwrap') as HTMLElement | null;
+    if (!el) return;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.classList.add('flash');
+    setTimeout(() => el.classList.remove('flash'), 1600);
+  }
+
   function renderEditor() {
     const scroll = editor.scrollTop;
     const p = P();
-    const setAll = (open: boolean) => { ['project', 'view', 'look', 'layout', 'items'].forEach(k => (ui.open[k] = open)); saveUi(); renderEditor(); };
+    const setAll = (open: boolean) => { ALL_CARDS.forEach(k => (ui.open[k] = open)); saveUi(); renderEditor(); };
     renderItems();
+    const [projectC, timelineC, lookC, layoutC] = settingsCards(p); // shown after the items, as in the planner: content first, appearance last
     editor.replaceChildren(
       h('div', { class: 'editor-head' }, h('strong', {}, 'Editor'), h('span', { class: 'spacer' }),
         h('button', { class: 'linkbtn', onclick: () => setAll(true) }, 'Expand all'), h('button', { class: 'linkbtn', onclick: () => setAll(false) }, 'Collapse all')),
-      ...settingsCards(p),
-      card('items', 'Timeline items', `${p.items.length} item${p.items.length === 1 ? '' : 's'}`, [itemsHolder], true));
+      steps(p),
+      projectC, timelineC,
+      card('items', 'Timeline items', `${p.items.length} item${p.items.length === 1 ? '' : 's'}`, [itemsHolder], 3),
+      lookC, layoutC);
     editor.scrollTop = scroll;
   }
 
@@ -474,6 +526,8 @@ export function mountApp(root: HTMLElement) {
     const p = P();
     layout = renderTimeline(p, store.themeFor(p), { interactive: true, holidays: store.holidaysFor(p) });
     preview.innerHTML = layout.svg;
+    // a project opens fitted to the pane (never enlarged); later edits keep whatever zoom the user chose
+    if (fittedFor !== p.id && preview.clientWidth > 0) { fittedFor = p.id; setZoom(Math.min(1, (preview.clientWidth - 40) / layout.width)); }
     applyZoom();
   }
 
@@ -493,7 +547,9 @@ export function mountApp(root: HTMLElement) {
     const startDay = dayAt(e.clientX);
     store.breakCoalesce();
     document.body.classList.add('dragging-bar');
+    let moved = false;
     const move = (ev: PointerEvent) => {
+      if (Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) > 3) moved = true;
       const delta = diffDays(startDay, dayAt(ev.clientX));
       store.mutate(p => {
         const it = p.items.find(i => i.id === id)!;
@@ -510,8 +566,14 @@ export function mountApp(root: HTMLElement) {
     const up = () => {
       document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
       document.body.classList.remove('dragging-bar'); store.breakCoalesce();
+      if (!moved) focusItem(id); // a click rather than a drag
     };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  });
+
+  preview.addEventListener('click', e => {
+    const id = (e.target as Element).closest('[data-jump]')?.getAttribute('data-jump');
+    if (id) focusItem(id);
   });
 
   document.addEventListener('keydown', e => {
@@ -534,6 +596,23 @@ export function mountApp(root: HTMLElement) {
       if (t) t.textContent = P().title || 'Untitled';
     }
   });
+  /** The guided tour: shows one section at a time, then puts the user's open / folded sections back. */
+  function runTour() {
+    if (touring) return;
+    const before = { open: { ...ui.open }, sidebar: ui.sidebar, editor: ui.editor };
+    touring = true;
+    ui.sidebar = true; ui.editor = true; applyLayoutClasses();
+    const showCard = (id: string) => { for (const k of ALL_CARDS) ui.open[k] = k === id; renderEditor(); };
+    startTour(timelineTour({ showCard }), () => {
+      touring = false;
+      ui.open = before.open; ui.sidebar = before.sidebar; ui.editor = before.editor;
+      applyLayoutClasses(); renderEditor(); saveUi();
+      markTourDone(TOUR_KEY);
+    });
+  }
+
   applyLayoutClasses();
   refreshAll();
+  // first visit: offer the tour (not in automated browsers, which it would only get in the way of)
+  if (tourPending(TOUR_KEY) && !navigator.webdriver) setTimeout(runTour, 900);
 }

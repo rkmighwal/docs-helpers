@@ -2,7 +2,7 @@
 
 [![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frkmighwal%2Fdocs-helpers%2Fbadges%2Ftimeline-builder.json)](https://github.com/rkmighwal/docs-helpers/releases)
 
-An offline, single-file HTML tool for building project timelines (Gantt-style) and exporting them as SVG or PNG for slides and documents. No server, no network, no account.
+An offline, single-file HTML tool for building project timelines (Gantt-style) and exporting them as an editable PowerPoint slide, SVG or PNG for slides and documents. No server, no network, no account.
 
 ## Use it
 
@@ -31,10 +31,12 @@ Development: `npm run dev` (hot reload), `npm test` (Vitest), `npm run build` (t
 - **Relative timelines**: choose *Relative — no dates* and columns become Week 0, Week 1, Week 2… (or Month 1…, Quarter 1…). Items are then placed by period number instead of date. You can also keep real dates but label columns Week 0, 1, 2…; switching between modes keeps every item in its period.
 - **Dates**: edit *End date* or *Working days*; the other is calculated, counting only the working days you choose per project (Mon–Fri, Sun–Thu, any combination) and skipping public holidays.
 - **Drag & drop**: reorder rows by the ⠿ handle (a phase moves with its children); drag bars in the preview to move them, drag bar edges to resize.
-- **Holiday lists**: create reusable lists (`YYYY-MM-DD, Name` per line, or import JSON/CSV) and attach any of them to any project.
+- **Holiday lists**: create reusable lists and attach any of them to any project. Add holidays by choosing the date in a calendar and typing a name: one holiday per row, each editable or removable, shown in date order with its weekday. Several can be pasted (`YYYY-MM-DD, Name` per line) or imported from JSON / CSV; changes save as you make them.
+- **Quick tour**: a one-minute guided tour of the whole tool starts on your first visit and can be replayed from *Quick tour* in the top bar.
 - **Projects**: many projects in the sidebar; new, duplicate, reorder, delete. Auto-saved to browser local storage on every change.
 - **Files**: *Save project (JSON)* writes a portable file (includes the holiday lists and custom design it uses); *Import JSON* accepts a project file or a full backup (*Backup all projects*). Uses the native save dialog where the browser supports it, otherwise downloads.
-- **Export**: SVG (vector, ideal for PowerPoint/Keynote/Google Slides) and PNG at 1–4× resolution.
+- **Export**: an **editable PowerPoint (.pptx) slide** in which every bar, marker, line and label is a native shape or text box (not a picture), so you can move, recolour and retype them in PowerPoint, Keynote or Google Slides; SVG (vector, sharp at any size); and PNG at 1–4× resolution. The slide is always the standard 16:9 (13.33 × 7.5 in) and the chart is sized to it: a tall plan is laid out again with wider time columns (up to 3×) until it fills the slide, keeping the same row height and text size, and a chart that is already wider than the slide is simply fitted to its width, with the spare room left above and below. Columns are never squeezed. The legend looks exactly as it does in the preview (same box, heading, swatches and labels) but always sits on a single line: one placed at the side goes below the chart, one placed above stays above, the gaps between entries keep the app's width when there is room and tighten only as far as needed, and the chart is widened slightly if even that is not enough. Dashed lines keep their exact dash pattern. The page colour is the slide background and the theme's font is used (Arial where it is a generic sans-serif stack). The `.pptx` is written by a small built-in ZIP/XML writer, so the tool still needs no libraries and works offline.
+- **Editor**: numbered sections (Project, Timeline, Items, then Theme & template, Layout), quick-link chips, “Toggle all details”, a preview that opens fitted to the pane, and click-to-jump: click a bar or a row label in the preview and its item is highlighted in the list.
 - **Themes and templates**, kept separate. A *theme* is the colours and the font: sixteen built in, fully editable, savable, exportable and importable as `.theme.json`. A *template* is the layout: sixteen built in (title banners, footer bands, rounded row bands, status text in bars, cell-filled grids, vertical phase pills, boxed legends, highlighted current period, outlined / gradient / striped / raised bars…), shown as live thumbnails. Choosing a template also switches to the theme it was designed with; changing the theme afterwards keeps the layout. The *Layout & style* section fine-tunes everything a template sets: header, bars, phases, markers, title, frame, rows, progress, legend style, row height, bar size / radius, grid and striping.
 - **Item looks**: per item, pick a colour, a marker shape / icon from a preset set (diamond, star, flag, check, target…) and a bar style (solid, outline, gradient, striped, raised).
 - **Legend**: generated from the item types, colours and icons actually used (give an item a *Legend label* to name its look), plus public holidays, weekends, today line and your own custom entries; placed bottom, top or right and included in exports.
@@ -66,6 +68,7 @@ Files and browser data saved before themes and templates were separated open as 
 | `src/themes.ts` | Built-in colour themes, validation, `lookOf()` (theme + layout as the renderer uses them) |
 | `src/templates.ts` | Built-in layout templates, applying a template, migration of older files |
 | `src/store.ts`, `src/storage.ts` | State, undo, autosave to localStorage |
+| `src/pptx.ts`, `src/xml.ts`, `src/zip.ts` | Editable PowerPoint export: the renderer's SVG becomes native shapes; a small XML reader and a stored-ZIP writer |
 | `src/export.ts` | JSON import/export/merge, file save, SVG → PNG |
 | `src/ui/` | DOM UI: app shell, dialogs |
 

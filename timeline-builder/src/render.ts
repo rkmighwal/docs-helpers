@@ -5,11 +5,29 @@ import { addDays, dow, periodIndexOf, shortDate, todayStr } from './dates';
 import { ShapeId, shapeSvg } from './shapes';
 
 export interface Holiday { date: string; name: string }
-export interface RenderOpts { interactive: boolean; holidays: Holiday[] }
-export interface Layout { svg: string; width: number; height: number; axis: Axis; chartX: number }
+export interface RenderOpts {
+  interactive: boolean;
+  holidays: Holiday[];
+  /** Width of the time columns relative to normal (default 1). */
+  colScale?: number;
+  /**
+   * Put the legend on a single line across the chart (one placed at the side goes below it), looking exactly as it does in the app:
+   * the same entries and styles, with only the gaps between entries tightened if they would not otherwise fit. The PowerPoint export uses this.
+   */
+  horizontalLegend?: boolean;
+}
+export interface Layout {
+  svg: string; width: number; height: number; axis: Axis; chartX: number;
+  /** Width of the chart without its outer padding. */
+  innerW: number;
+  /** The chart width (without padding) a single-line legend needs to keep a comfortable gap between entries; 0 when there is none. */
+  legendMinInner: number;
+}
 
 const PAD = 20;
 const LABEL_W = 230;
+/** The least gap between legend entries when they are put on a single line. */
+const MIN_LEGEND_GAP = 12;
 
 export const esc = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -169,7 +187,7 @@ export function renderTimeline(p: Project, theme: Theme, o: RenderOpts): Layout 
   const c = t.colors, des = t.design;
   const dated = p.useDates;
   const defs = new Defs();
-  const axis = buildAxis(p);
+  const axis = buildAxis(p, o.colScale);
   const origin = axisStart(p);
   const num0 = Number.isFinite(p.firstIndex) ? p.firstIndex : 0;
   const rowH = t.rowHeight;
@@ -199,21 +217,33 @@ export function renderTimeline(p: Project, theme: Theme, o: RenderOpts): Layout 
   const innerW = LABEL_W + axis.width;
   const width = PAD * 2 + innerW;
   // ---- legend layout
-  const boxesLegend = des.legend === 'boxes' && p.legend.position !== 'right' && entries.length > 0 && (innerW - 24) / entries.length >= 90;
+  const legendPos = o.horizontalLegend && p.legend.position === 'right' ? 'bottom' : p.legend.position;
+  const flowW = innerW; // where legend entries wrap
+  // the legend's style (full-width boxes or the inline list) is chosen from the chart's width in the app, so a widened chart keeps the app's look
+  const appInnerW = LABEL_W + axis.width / (o.colScale ?? 1);
+  const boxesLegend = des.legend === 'boxes' && legendPos !== 'right' && entries.length > 0 && (appInnerW - 24) / entries.length >= 90;
+  const entryBase = entries.map(e => entryW(e) - 22); // an entry without the gap that follows it
+  const legendMinInner = entries.length && !boxesLegend && legendPos !== 'right' ? 24 + entryBase.reduce((a, b) => a + b, 0) + MIN_LEGEND_GAP * (entries.length - 1) : 0;
   let legendH = 0, legendRightW = 0;
   const legendPlacement: { e: LegendEntry; x: number; y: number }[] = [];
   const legendTitleH = boxesLegend ? 0 : 22;
   if (entries.length) {
     if (boxesLegend) legendH = 36;
-    else if (p.legend.position === 'right') {
+    else if (legendPos === 'right') {
       legendRightW = Math.max(160, Math.max(...entries.map(entryW)) + 20);
       entries.forEach((e, i) => legendPlacement.push({ e, x: 12, y: legendTitleH + 14 + i * 24 }));
       legendH = legendTitleH + 14 + entries.length * 24 + 6;
+    } else if (o.horizontalLegend && (entries.length < 2 || (flowW - 24 - entryBase.reduce((a, b) => a + b, 0)) / (entries.length - 1) >= 6)) {
+      // a single line: the same entries, the gap between them as wide as the app's if there is room and tighter if not
+      const gap = entries.length < 2 ? 22 : Math.min(22, (flowW - 24 - entryBase.reduce((a, b) => a + b, 0)) / (entries.length - 1));
+      let x = 12;
+      entries.forEach((e, i) => { legendPlacement.push({ e, x, y: legendTitleH + 14 }); x += entryBase[i] + gap; });
+      legendH = legendTitleH + 14 + 24 + 4;
     } else {
       let x = 12, row = 0;
       for (const e of entries) {
         const w = entryW(e);
-        if (x + w > innerW - 12 && x > 12) { x = 12; row++; }
+        if (x + w > flowW - 12 && x > 12) { x = 12; row++; }
         legendPlacement.push({ e, x, y: legendTitleH + 14 + row * 24 });
         x += w;
       }
@@ -248,8 +278,8 @@ export function renderTimeline(p: Project, theme: Theme, o: RenderOpts): Layout 
   else if (des.title === 'center') { y += PAD; titleY = y; y += (p.title ? 42 : 0) + (p.subtitle ? 26 : 0) + 14; }
   else { y += PAD; titleY = y; y += (p.title ? 34 : 0) + (p.subtitle ? 22 : 0) + (hasTitle ? 12 : 0); }
   if (rules && hasTitle) { ruleTopY = y - 4; y += 14; }
-  const legendTop = p.legend.position === 'top' && entries.length;
-  const legendBottom = p.legend.position === 'bottom' && entries.length;
+  const legendTop = legendPos === 'top' && entries.length;
+  const legendBottom = legendPos === 'bottom' && entries.length;
   const legendTopY = y; if (legendTop) y += legendH + 12;
   const hdrY = y; y += hdrH;
   const rowsY = y; const rowsH = nRows * rowH; y += rowsH;
@@ -308,10 +338,11 @@ export function renderTimeline(p: Project, theme: Theme, o: RenderOpts): Layout 
   const drawLegend = (bx: number, by: number, bw: number, bh: number) => {
     if (boxesLegend) {
       const gap = 8, w = (bw - gap * (entries.length - 1)) / entries.length;
+      const wApp = (appInnerW - gap * (entries.length - 1)) / entries.length; // labels are shortened for the box width the app has, so they read the same
       entries.forEach((e, i) => {
         const x = bx + i * (w + gap);
         s.push(`<rect x="${x.toFixed(1)}" y="${by}" width="${w.toFixed(1)}" height="${bh - 4}" fill="${e.color}" stroke="${c.border}" ${gridDash}/>`);
-        s.push(`<text x="${(x + w / 2).toFixed(1)}" y="${by + (bh - 4) / 2 + 4}" font-size="12" font-weight="600" text-anchor="middle" fill="${onColor(e.color)}">${esc(trunc(e.label, Math.floor(w / 7)))}</text>`);
+        s.push(`<text x="${(x + w / 2).toFixed(1)}" y="${by + (bh - 4) / 2 + 4}" font-size="12" font-weight="600" text-anchor="middle" fill="${onColor(e.color)}">${esc(trunc(e.label, Math.floor(Math.min(w, wApp) / 7)))}</text>`);
       });
       return;
     }
@@ -452,6 +483,7 @@ export function renderTimeline(p: Project, theme: Theme, o: RenderOpts): Layout 
     const heading = it.type === 'group' && des.group === 'heading';
     if (heading && i > 0) s.push(`<line x1="${PAD + 10}" y1="${ry}" x2="${chartRight - 10}" y2="${ry}" stroke="${c.border}" stroke-width="1.2"/>`);
     s.push(`<text x="${tx0}" y="${cy + 4}" font-size="${heading ? 12 : fs}" ${it.type === 'group' ? 'font-weight="700"' : ''} fill="${heading ? c.group : c.text}">${esc(trunc(it.name, maxCh))}</text>`);
+    s.push(ia(`<rect x="${PAD}" y="${ry}" width="${LABEL_W}" height="${rowH}" fill="transparent" data-jump="${it.id}"/>`));
 
     const { s: a, e: b } = sp[idx];
     if (b < axis.rangeStart || a >= axis.rangeEnd) return;
@@ -527,5 +559,5 @@ export function renderTimeline(p: Project, theme: Theme, o: RenderOpts): Layout 
   if (legendRightW) drawLegend(PAD + innerW + PAD, rightLegendY, legendRightW, legendH);
 
   const head = `<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${height}" viewBox="0 0 ${totalW} ${height}" font-family="${esc(t.fontFamily)}"><defs>${defs}</defs>`;
-  return { svg: head + s.join('') + '</svg>', width: totalW, height, axis, chartX };
+  return { svg: head + s.join('') + '</svg>', width: totalW, height, axis, chartX, innerW, legendMinInner };
 }
