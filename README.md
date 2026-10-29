@@ -8,7 +8,7 @@ Every tool lives in its own folder, runs fully offline in the browser, and is fr
 
 | Tool | What it does | Folder | Downloads |
 | --- | --- | --- | --- |
-| **Timeline Builder** | Build project timelines (Gantt-style) with tasks, phases, milestones, gates and holidays, then export them as SVG or PNG for slides and documents. | [timeline-builder/](timeline-builder/) | [![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frkmighwal%2Fdocs-helpers%2Fbadges%2Ftimeline-builder.json)](https://github.com/rkmighwal/docs-helpers/releases) |
+| **Timeline Builder** | Build project timelines (Gantt-style) with tasks, phases, milestones, gates and holidays, then export them as an editable PowerPoint slide, SVG or PNG for slides and documents. | [timeline-builder/](timeline-builder/) | [![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frkmighwal%2Fdocs-helpers%2Fbadges%2Ftimeline-builder.json)](https://github.com/rkmighwal/docs-helpers/releases) |
 | **Resource Loading Planner** | Plan how many people of which skill are loaded onto which work stream over time, with automatic totals per week, month, quarter or year. Import tasks from Timeline Builder; export as Excel, PNG or SVG. | [resource-loading-planner/](resource-loading-planner/) | [![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Frkmighwal%2Fdocs-helpers%2Fbadges%2Fresource-loading-planner.json)](https://github.com/rkmighwal/docs-helpers/releases) |
 
 More tools will be added here over time.
@@ -24,11 +24,12 @@ An offline, single-file HTML tool. Highlights:
 - Weekly, monthly, quarterly or yearly views, optionally grouped (for example months under quarters).
 - Real calendar dates, or relative timelines with no dates (Week 0, Week 1, …).
 - Set either the end date or the number of working days; the other is calculated, skipping the days you mark as non-working and public holidays.
-- Reusable public-holiday lists shared across projects.
+- Reusable public-holiday lists shared across projects: pick the date in a calendar, type a name, one holiday per row.
+- A one-minute guided Quick tour on first visit (replay any time from the top bar).
 - Drag and drop to reorder rows, and to move or resize bars.
 - Many projects, auto-saved in the browser, with JSON import/export and backup.
 - Colour themes and layout templates kept separate: pick a template for the look, a theme for the colours, and fine-tune either; plus per-item colours, icons and bar styles.
-- An automatic legend, and SVG or PNG export.
+- An automatic legend, and export as an editable PowerPoint slide (every bar and label a real shape), SVG or PNG.
 
 ### Use it
 
