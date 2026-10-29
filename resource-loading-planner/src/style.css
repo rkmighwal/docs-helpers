@@ -238,3 +238,28 @@ dialog.modal.narrow-modal { width: min(680px, 94vw); }
 
 select.cur { min-width: 0; flex: 1; }
 input.curtext { width: 90px; }
+
+/* holiday lists: quick add and one row per holiday */
+.hadd { display: grid; grid-template-columns: 150px 1fr auto; gap: 8px; align-items: center; }
+.hadd input, .hrow input { width: 100%; }
+.hrows { display: flex; flex-direction: column; gap: 4px; max-height: 40vh; overflow: auto; padding: 2px 4px 2px 0; }
+.hrow { display: grid; grid-template-columns: 150px 38px 1fr 18px 30px; gap: 8px; align-items: center; padding: 1px 2px; }
+.hrow.dupe { background: color-mix(in srgb, var(--danger) 9%, transparent); border-radius: 6px; }
+.hday { color: var(--muted); font-size: 12px; text-align: center; }
+.hday.off { font-style: italic; opacity: .55; }
+.hwarn { color: var(--danger); cursor: help; }
+.hpaste { margin-top: 8px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; }
+
+/* quick tour */
+.tour-root { position: fixed; inset: 0; z-index: 2000; }
+.tour-shield { position: absolute; inset: 0; }
+.tour-spot { position: absolute; border-radius: 10px; box-shadow: 0 0 0 9999px rgba(8, 12, 24, .62); outline: 2px solid var(--accent); pointer-events: none; transition: left .22s ease, top .22s ease, width .22s ease, height .22s ease; }
+.tour-pop { position: absolute; width: min(370px, calc(100vw - 24px)); background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 16px 44px rgba(0, 0, 0, .38); padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 6px; }
+.tour-pop h3 { margin: 0; font-size: 16px; }
+.tour-pop p { margin: 0; line-height: 1.45; }
+.tour-count { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); }
+.tour-dots { display: flex; gap: 4px; margin: 4px 0 2px; flex-wrap: wrap; }
+.tour-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+.tour-dots span.seen { background: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.tour-dots span.on { background: var(--accent); width: 16px; border-radius: 3px; }
+.tour-actions { display: flex; align-items: center; gap: 8px; margin-top: 4px; }

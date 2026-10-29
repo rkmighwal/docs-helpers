@@ -5,6 +5,8 @@ import { BUILTIN_THEMES, THEME_COLOR_LABELS, themeById, validateTheme } from '..
 import { TEMPLATES, Template, applyTemplate } from '../templates';
 import { download, readFileText, slug } from '../export';
 import { renderPlan } from '../render';
+import { Holiday, addHoliday, duplicateDates, mergeHolidays, parseHolidayText, removeHoliday, sortHolidays, updateHoliday, weekdayName } from '../holidays';
+import { parse } from '../dates';
 import { DEFAULT_IMPORT, ImportOptions, TbFile, applyTimelineImport, describeImport, parseTimelineFile } from '../tbimport';
 import { APP, copyrightLine, formatReleaseDate } from '../about';
 
@@ -29,90 +31,137 @@ export function fitSvg(el: HTMLElement, svg: string) {
 
 /* ---------- Holiday lists ---------- */
 
-export function parseHolidayText(text: string): { holidays: { date: string; name: string }[]; bad: number } {
-  const holidays: { date: string; name: string }[] = [];
-  let bad = 0;
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line) continue;
-    const m = line.match(/^(\d{4}-\d{2}-\d{2})\s*[,;\t ]?\s*(.*)$/);
-    if (m && !isNaN(Date.parse(m[1]))) holidays.push({ date: m[1], name: m[2].replace(/^"|"$/g, '') });
-    else bad++;
-  }
-  return { holidays, bad };
-}
-
 export function openHolidayDialog() {
   let sel: string | null = store.lib.holidayLists[0]?.id ?? null;
+  let draftDate = '', draftName = ''; // the quick-add line keeps what was typed while the rest of the dialog redraws
+  let pasteOpen = false;
+  let saveTimer: number | undefined;
   const attach = (id: string, on: boolean) => store.mutate(p => {
     p.holidayListIds = on ? [...new Set([...p.holidayListIds, id])] : p.holidayListIds.filter(x => x !== id);
   }, true);
+  const current = () => store.lib.holidayLists.find(l => l.id === sel);
+  /** The saved list, in date order. Handlers read this, not the list captured when the dialog was drawn, so a rename that is still being saved is never overwritten. */
+  const live = (): Holiday[] => sortHolidays(current()?.holidays ?? []);
+  const save = (holidays: Holiday[]) => { const l = current(); if (l) store.upsertHolidayList({ ...l, holidays }); };
   const root = h('div', { class: 'dlg-body' });
+
   const render = () => {
+    window.clearTimeout(saveTimer);
     root.replaceChildren();
     const lists = store.lib.holidayLists;
-    const cur = lists.find(l => l.id === sel);
+    const cur = current();
+    const proj = store.active();
+
+    const importFile = async () => {
+      const f = await pickFile('.json,.csv,.txt'); if (!f) return;
+      try {
+        const text = await readFileText(f);
+        let l: HolidayList;
+        try {
+          const j = JSON.parse(text);
+          l = { id: uid(), name: j.name || f.name.replace(/\.\w+$/, ''), holidays: sortHolidays(parseHolidayText((j.holidays ?? []).map((x: any) => `${x.date},${x.name ?? ''}`).join('\n')).holidays) };
+        } catch {
+          l = { id: uid(), name: f.name.replace(/\.\w+$/, ''), holidays: sortHolidays(parseHolidayText(text).holidays) };
+        }
+        store.upsertHolidayList(l); attach(l.id, true); sel = l.id; render(); toast(`Imported ${l.holidays.length} holidays and added the list to this project`);
+      } catch (e: any) { toast(e.message, 'error'); }
+    };
+
     const listCol = h('div', { class: 'dlg-col narrow' },
-      h('p', { class: 'hint' }, 'Holiday lists are shared: attach any list to any project from its Timeline settings. Holidays are not working days, so they carry no load.'),
+      h('p', { class: 'hint' }, 'Holiday lists are shared: attach any list to any project from its settings. Holidays are not working days, so they carry no load.'),
       ...lists.map(l => h('div', { class: 'list-item' + (l.id === sel ? ' active' : ''), onclick: () => { sel = l.id; render(); } },
-        l.name, h('small', {}, `${l.holidays.length} days${store.active().holidayListIds.includes(l.id) ? ' · in use' : ''}`))),
+        l.name, h('small', {}, `${l.holidays.length} day${l.holidays.length === 1 ? '' : 's'}${proj.holidayListIds.includes(l.id) ? ' · in use' : ''}`))),
       h('button', { class: 'btn primary', onclick: () => {
         const l: HolidayList = { id: uid(), name: 'New holiday list', holidays: [] };
         store.upsertHolidayList(l); attach(l.id, true); sel = l.id; render();
       } }, '+ New list'),
-      h('button', { class: 'btn', onclick: async () => {
-        const f = await pickFile('.json,.csv,.txt'); if (!f) return;
-        try {
-          const text = await readFileText(f);
-          let l: HolidayList;
-          try {
-            const j = JSON.parse(text);
-            l = { id: uid(), name: j.name || f.name.replace(/\.\w+$/, ''), holidays: parseHolidayText((j.holidays ?? []).map((x: any) => `${x.date},${x.name ?? ''}`).join('\n')).holidays };
-          } catch {
-            l = { id: uid(), name: f.name.replace(/\.\w+$/, ''), holidays: parseHolidayText(text).holidays };
-          }
-          store.upsertHolidayList(l); attach(l.id, true); sel = l.id; render(); toast(`Imported ${l.holidays.length} holidays and added the list to this project`);
-        } catch (e: any) { toast(e.message, 'error'); }
-      } }, 'Import file…'));
+      h('button', { class: 'btn', onclick: importFile }, 'Import file…'));
+
     const editCol = h('div', { class: 'dlg-col' });
-    if (!cur) editCol.append(h('p', { class: 'hint' }, 'Create or select a holiday list.'));
-    else {
-      const info = h('span', { class: 'hint' });
-      const ta = h('textarea', { rows: 16, spellcheck: 'false', placeholder: '2026-01-26, Republic Day\n2026-12-25, Christmas' }) as HTMLTextAreaElement;
-      ta.value = cur.holidays.slice().sort((a, b) => a.date.localeCompare(b.date)).map(x => `${x.date}, ${x.name}`).join('\n');
-      const apply = () => {
-        const { holidays, bad } = parseHolidayText(ta.value);
-        info.textContent = `${holidays.length} valid dates` + (bad ? ` · ${bad} line(s) ignored (use YYYY-MM-DD, Name)` : '');
-        return holidays;
-      };
-      apply();
-      let timer: number | undefined;
-      ta.addEventListener('input', () => {
-        const holidays = apply();
-        window.clearTimeout(timer);
-        timer = window.setTimeout(() => {
-          const l = store.lib.holidayLists.find(x => x.id === cur.id); if (!l) return;
-          store.upsertHolidayList({ ...l, holidays });
-          const small = root.querySelector('.list-item.active small'); if (small) small.textContent = `${holidays.length} days${store.active().holidayListIds.includes(l.id) ? ' · in use' : ''}`;
-        }, 400);
-      });
-      const proj = store.active();
-      editCol.append(
-        h('label', { class: 'field' }, 'Name', h('input', { type: 'text', value: cur.name, onchange: (e: Event) => {
-          store.upsertHolidayList({ ...cur, name: (e.target as HTMLInputElement).value || 'Holidays' }); render();
-        } })),
-        h('label', { class: 'check use-list' }, h('input', { type: 'checkbox', checked: proj.holidayListIds.includes(cur.id), onchange: (e: Event) => { attach(cur.id, (e.target as HTMLInputElement).checked); render(); } }),
-          `Use this list in the current project: “${proj.title || 'Untitled'}”`),
-        proj.useDates ? '' : h('p', { class: 'hint' }, 'This project has no calendar dates, so holidays are ignored until you switch it to calendar dates.'),
-        h('label', { class: 'field' }, 'Dates — one per line: YYYY-MM-DD, Name (saved automatically)', ta),
-        info,
-        h('div', { class: 'row' },
-          h('button', { class: 'btn primary', onclick: () => { store.upsertHolidayList({ ...cur, holidays: apply() }); toast('Holiday list saved'); render(); } }, 'Save now'),
-          h('button', { class: 'btn', onclick: () => download(`${slug(cur.name)}-holidays.json`, JSON.stringify({ name: cur.name, holidays: cur.holidays }, null, 2), 'application/json') }, 'Export JSON'),
-          h('button', { class: 'btn danger', onclick: () => {
-            if (confirm(`Delete "${cur.name}"? It will be detached from all projects.`)) { store.removeHolidayList(cur.id); sel = store.lib.holidayLists[0]?.id ?? null; render(); }
-          } }, 'Delete')));
+    if (!cur) {
+      editCol.append(h('p', { class: 'hint' }, 'Create or select a holiday list.'));
+      root.append(listCol, editCol);
+      return;
     }
+
+    const holidays = sortHolidays(cur.holidays);
+    const dupes = duplicateDates(holidays);
+
+    // quick add: pick the date in the calendar, type the name, press Add (or Enter)
+    const dateIn = h('input', { type: 'date', class: 'hdate', value: draftDate, title: 'Pick the date in the calendar', oninput: (e: Event) => { draftDate = (e.target as HTMLInputElement).value; } }) as HTMLInputElement;
+    const nameIn = h('input', { type: 'text', class: 'hname', value: draftName, placeholder: 'Holiday name, e.g. Republic Day', oninput: (e: Event) => { draftName = (e.target as HTMLInputElement).value; },
+      onkeydown: (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); add(); } } }) as HTMLInputElement;
+    const add = () => {
+      const r = addHoliday(live(), dateIn.value, nameIn.value);
+      if (r.error) { toast(r.error, 'error'); (dateIn.value ? nameIn : dateIn).focus(); return; }
+      draftName = ''; // the date stays, so the next one in the same month is quick to pick
+      save(r.list); render();
+      (root.querySelector('.hname') as HTMLInputElement | null)?.focus();
+    };
+    const quickAdd = h('div', { class: 'hadd' }, dateIn, nameIn, h('button', { class: 'btn primary', onclick: add }, '+ Add holiday'));
+
+    // one holiday per row
+    const rows = holidays.map((hd, i) => {
+      const wd = weekdayName(hd.date);
+      const off = !proj.workDays.includes(parse(hd.date).getUTCDay());
+      const dateInput = h('input', { type: 'date', class: 'hdate', value: hd.date, title: 'Change the date',
+        onchange: (e: Event) => {
+          const v = (e.target as HTMLInputElement).value;
+          const r = v ? updateHoliday(live(), i, { date: v }) : { list: live(), error: 'A holiday needs a date.' };
+          if (r.error) { toast(r.error, 'error'); render(); return; }
+          save(r.list); render();
+        } });
+      const nameInput = h('input', { type: 'text', class: 'hname', value: hd.name, placeholder: 'Holiday name',
+        oninput: (e: Event) => {
+          const v = (e.target as HTMLInputElement).value;
+          window.clearTimeout(saveTimer);
+          saveTimer = window.setTimeout(() => { const r = updateHoliday(sortHolidays(current()?.holidays ?? []), i, { name: v }); if (!r.error) save(r.list); }, 300);
+        } });
+      return h('div', { class: 'hrow' + (dupes.has(hd.date) ? ' dupe' : '') },
+        dateInput,
+        h('span', { class: 'hday' + (off ? ' off' : ''), title: off ? 'This day is not a working day in the current project anyway' : '' }, wd),
+        nameInput,
+        dupes.has(hd.date) ? h('span', { class: 'hwarn', title: 'Another holiday is on this date; only the first one is used' }, '⚠') : h('span'),
+        h('button', { class: 'btn tiny danger', title: 'Remove this holiday', onclick: () => { window.clearTimeout(saveTimer); save(removeHoliday(live(), i)); render(); } }, '✕'));
+    });
+
+    const years = [...new Set(holidays.map(x => x.date.slice(0, 4)))];
+    const info = h('div', { class: 'hint' }, holidays.length
+      ? `${holidays.length} holiday${holidays.length === 1 ? '' : 's'}${years.length ? ` · ${years.join(', ')}` : ''} · saved automatically`
+      : 'No holidays yet. Pick a date and type a name above, then press Add.');
+
+    const pasteArea = h('textarea', { rows: 6, spellcheck: 'false', placeholder: '2026-01-26, Republic Day\n2026-12-25, Christmas' }) as HTMLTextAreaElement;
+    const pasteInfo = h('span', { class: 'hint' });
+    pasteArea.addEventListener('input', () => { const p = parseHolidayText(pasteArea.value); pasteInfo.textContent = `${p.holidays.length} valid line${p.holidays.length === 1 ? '' : 's'}${p.bad ? ` · ${p.bad} ignored (use YYYY-MM-DD, Name)` : ''}`; });
+    const paste = h('div', { class: 'hpaste' },
+      h('p', { class: 'hint' }, 'One per line: YYYY-MM-DD, Name. Dates that are already in the list are skipped.'), pasteArea,
+      h('div', { class: 'row' }, h('button', { class: 'btn small primary', onclick: () => {
+        const p = parseHolidayText(pasteArea.value);
+        if (!p.holidays.length) { toast('Nothing to add: use lines like 2026-01-26, Republic Day', 'error'); return; }
+        const m = mergeHolidays(live(), p.holidays);
+        save(m.list); pasteOpen = false; render();
+        toast(`Added ${m.added} holiday${m.added === 1 ? '' : 's'}${m.skipped ? `, skipped ${m.skipped} already in the list` : ''}`);
+      } }, 'Add these'), pasteInfo));
+
+    editCol.append(
+      h('label', { class: 'field' }, 'List name', h('input', { type: 'text', value: cur.name, onchange: (e: Event) => {
+        store.upsertHolidayList({ ...cur, name: (e.target as HTMLInputElement).value || 'Holidays' }); render();
+      } })),
+      h('label', { class: 'check use-list' }, h('input', { type: 'checkbox', checked: proj.holidayListIds.includes(cur.id), onchange: (e: Event) => { attach(cur.id, (e.target as HTMLInputElement).checked); render(); } }),
+        `Use this list in the current project: “${proj.title || 'Untitled'}”`),
+      proj.useDates ? '' : h('p', { class: 'hint' }, 'This project has no calendar dates, so holidays are ignored until you switch it to calendar dates.'),
+      h('div', { class: 'subhead' }, 'Add a holiday'),
+      quickAdd,
+      h('div', { class: 'subhead' }, 'Holidays in this list'),
+      holidays.length ? h('div', { class: 'hrows' }, ...rows) : h('p', { class: 'empty' }, 'Nothing here yet.'),
+      info,
+      h('div', { class: 'row wrap' },
+        h('button', { class: 'btn small', onclick: () => { pasteOpen = !pasteOpen; render(); } }, pasteOpen ? 'Hide paste box' : 'Paste several at once…'),
+        h('button', { class: 'btn small', onclick: () => download(`${slug(cur.name)}-holidays.json`, JSON.stringify({ name: cur.name, holidays: live() }, null, 2), 'application/json') }, 'Export JSON'),
+        h('button', { class: 'btn small danger', onclick: () => {
+          if (confirm(`Delete "${cur.name}"? It will be detached from all projects.`)) { store.removeHolidayList(cur.id); sel = store.lib.holidayLists[0]?.id ?? null; render(); }
+        } }, 'Delete list')),
+      pasteOpen ? paste : '');
     root.append(listCol, editCol);
   };
   render();

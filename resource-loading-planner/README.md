@@ -35,7 +35,7 @@ Development: `npm run dev` (hot reload), `npm test` (Vitest), `npm run build` (t
 ## Features
 
 - **Timeline**: weekly, monthly, quarterly or yearly columns, optionally grouped under a higher level (weeks under months / quarters / years, months under quarters / years, quarters under years). Real dates with a start date, or a *relative* timeline with no dates; switching keeps everything in its period.
-- **Working days**: choose which days of the week count (Mon–Fri, Mon–Sat, Sun–Thu, any combination) and attach public-holiday lists. Only working days carry load; an optional *working days* row shows the count per column.
+- **Working days**: choose which days of the week count (Mon–Fri, Mon–Sat, Sun–Thu, any combination) and attach public-holiday lists (add a holiday by picking the date in a calendar and typing a name; one holiday per row, each editable or removable, with its weekday; several can be pasted or imported). Only working days carry load; an optional *working days* row shows the count per column.
 - **Work streams, skills, resources**: your own lists with colours. A resource has skills (the first is the primary one), an availability in FTE and an optional availability window.
 - **Resource loading lines**: *N people of skill S on work stream W between two dates.* Anonymous (“3 developers”) or assigned to a named resource — the choice of people is limited to those who have the line’s skill; a resource is always written with their skills, e.g. “Alice (Developer, Tester)”; optionally linked to a task so the line follows the task’s dates.
 - **Automatic totals** per column at the chosen grain: group subtotals, a total row, available capacity, spare / shortfall, and a *loading by skill* summary. Cells that exceed the available capacity are flagged.
@@ -49,6 +49,7 @@ Development: `npm run dev` (hot reload), `npm test` (Vitest), `npm run build` (t
 - **Themes**: 19 built-in colour themes, fully editable (every colour, font and size); save your own, export and import them as `.theme.json`.
 - **Templates**: 13 ready-made table designs inspired by popular looks — spreadsheet grid, clean sheet, minimal notes, striped table, Material data table, docs table, resource heat map, capacity bars, chips, Gantt fill, consulting navy, dark dashboard, print black-and-white — shown as live thumbnails.
 - **Projects**: many projects in the sidebar; new, duplicate, reorder, delete; auto-saved in the browser; undo / redo (Ctrl/Cmd+Z, Shift+Z).
+- **Quick tour**: a one-minute guided tour of the whole tool starts on your first visit and can be replayed from *Quick tour* in the top bar.
 - **Files**: *Save project as JSON* writes a portable file (includes the holiday lists and custom theme it uses) that *Open / import* reads back later; *Backup all projects* saves everything.
 - **Export**: Excel workbook (`.xlsx`), SVG (vector, ideal for slides) and PNG at 1×, 2× or 4×.
 - **Collapsible panels**: every editor section, the editor itself and the project list fold away to give the preview room. Click a row in the preview to jump to its resource line.

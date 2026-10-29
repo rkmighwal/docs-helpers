@@ -1,4 +1,6 @@
 import { h, pickFile, toast } from './dom';
+import { markTourDone, startTour, tourPending } from './tour';
+import { plannerTour } from '../tourSteps';
 import { openCostExportDialog, openHolidayDialog, openLicenseDialog, openTemplateDialog, openThemeDialog, openTimelineImportDialog } from './dialogs';
 import { APP, formatReleaseDate } from '../about';
 import { store } from '../store';
@@ -26,7 +28,10 @@ const UI_DEFAULT: UiState = { open: { project: true, timeline: true, loading: tr
 const ui: UiState = (() => {
   try { const j = JSON.parse(localStorage.getItem(UI_KEY) || '{}'); return { ...UI_DEFAULT, ...j, open: { ...UI_DEFAULT.open, ...(j.open ?? {}) } }; } catch { return { ...UI_DEFAULT, open: { ...UI_DEFAULT.open } }; }
 })();
-const saveUi = () => { try { localStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch { /* ignore */ } };
+const TOUR_KEY = 'resource-loading-planner:tour';
+/** While the guided tour opens and folds sections, what the user has open is left alone. */
+let touring = false;
+const saveUi = () => { if (touring) return; try { localStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch { /* ignore */ } };
 
 const CARDS = ['project', 'timeline', 'workstreams', 'skills', 'resources', 'tasks', 'loading', 'cost', 'content', 'look'];
 
@@ -183,9 +188,10 @@ export function mountApp(root: HTMLElement) {
       ['Excel workbook (.xlsx)', doXlsx], null,
       ['SVG — vector, best for slides', doSvg], null,
       ['PNG — standard (2×)', () => doPng(2)], ['PNG — high resolution (4×)', () => doPng(4)], ['PNG — small (1×)', () => doPng(1)]], true),
-    h('button', { class: 'btn', title: 'Start from a ready-made table design', onclick: openTemplateDialog }, '▦ Templates'),
-    h('button', { class: 'btn', title: 'Colours and fonts', onclick: openThemeDialog }, '🎨 Themes'),
-    h('button', { class: 'btn', onclick: openHolidayDialog }, '🗓 Holiday lists'),
+    h('button', { class: 'btn', title: 'Start from a ready-made table design', onclick: openTemplateDialog, 'data-tour': 'templates' }, '▦ Templates'),
+    h('button', { class: 'btn', title: 'Colours and fonts', onclick: openThemeDialog, 'data-tour': 'themes' }, '🎨 Themes'),
+    h('button', { class: 'btn', onclick: openHolidayDialog, 'data-tour': 'holidays' }, '🗓 Holiday lists'),
+    h('button', { class: 'btn', title: 'A one-minute guided tour of the tool', onclick: () => runTour(), 'data-tour': 'tour' }, '❓ Quick tour'),
     undoBtn, redoBtn, h('span', { class: 'spacer' }), statusEl);
   store.onStatus(s => {
     statusEl.textContent = s === 'saved' ? '✓ Auto-saved in browser' : s === 'saving' ? 'Saving…' : '⚠ Browser storage unavailable — use File ▸ Save project';
@@ -769,7 +775,24 @@ export function mountApp(root: HTMLElement) {
       if (t) t.textContent = P().title || 'Untitled';
     }
   });
+  /** The guided tour: shows one section at a time, then puts the user's open / folded sections back. */
+  function runTour() {
+    if (touring) return;
+    const before = { open: { ...ui.open }, sidebar: ui.sidebar, editor: ui.editor };
+    touring = true;
+    ui.sidebar = true; ui.editor = true; applyLayoutClasses();
+    const showCard = (id: string) => { for (const k of CARDS) ui.open[k] = k === id; renderEditor(); };
+    startTour(plannerTour({ showCard }), () => {
+      touring = false;
+      ui.open = before.open; ui.sidebar = before.sidebar; ui.editor = before.editor;
+      applyLayoutClasses(); renderEditor(); saveUi();
+      markTourDone(TOUR_KEY);
+    });
+  }
+
   applyLayoutClasses();
   refreshAll();
+  // first visit: offer the tour (not in automated browsers, which it would only get in the way of)
+  if (tourPending(TOUR_KEY) && !navigator.webdriver) setTimeout(runTour, 900);
 }
 
